@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from typer.testing import CliRunner
 
@@ -45,6 +47,9 @@ def test_inventory_offline_all(tmp_path):
     result = runner.invoke(app, ["inventory", "--all", "--offline", "--config", str(cfg_file)])
     assert result.exit_code == 0, result.output
     assert list((tmp_path / "out" / "reports").glob("*/azdo-analysis-inventory.xlsx"))
+    # the Result table counts build/YAML pipelines and classic releases separately
+    assert re.search(r"Project\W+Mode\W+Repos\W+Pipelines\W+Releases\W+Blockers\W+High", result.output), result.output
+    assert re.search(r"Contoso Retail\W+\w+\W+5\W+4\W+1\W", result.output), result.output
 
 
 def test_inventory_requires_scope(tmp_path):

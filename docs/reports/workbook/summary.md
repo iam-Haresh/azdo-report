@@ -26,9 +26,9 @@
 | Dormant | repos with no activity within `active_days` but some within `dormant_days` | activity status |
 | Dead | repos whose status is Dead or Never | activity status |
 | Disabled | repos disabled in Azure DevOps | the repo's `isDisabled` flag |
-| YAML | YAML pipeline definitions | build definitions with process type 2 |
-| Classic build | classic (designer) build definitions | the other build definitions |
-| Classic release | classic release definitions | release definitions |
+| YAML pipelines | YAML pipelines (Pipelines → Pipelines), including those that also deploy through deployment stages: Azure DevOps has no separate YAML release. Their deployment stages are on the [Release Stages sheet](release-stages.md) (deep `analyze`) | build definitions with process type 2 (a YAML file) |
+| Classic builds | build pipelines made in the classic (designer) editor | the other build definitions |
+| Classic releases | classic release definitions (Pipelines → Releases) | release definitions |
 | Low | repos at this complexity level (disabled repos excluded; a complexity override counts if set) | [complexity score](../concepts.md#complexity-score) |
 | Medium | same, Medium | complexity score |
 | High | same, High | complexity score |

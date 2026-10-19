@@ -229,12 +229,13 @@ def _run(cfg: Config, *, projects: list[str], all_projects: bool, deep: bool, re
     paths = write_reports(result, label, dossiers=deep)
     findings = result.all_findings()
     blockers = sum(1 for f in findings if f.severity == "blocker")
-    table = Table(title="Result")
-    for col in ("Project", "Mode", "Repos", "Pipelines", "Blockers", "High"):
-        table.add_column(col)
+    table = Table(title="Result", caption="Pipelines = build/YAML pipelines, Releases = classic releases")
+    for col in ("Project", "Mode", "Repos", "Pipelines", "Releases", "Blockers", "High"):
+        table.add_column(col, justify="left" if col in ("Project", "Mode") else "right")
     for p in result.projects:
         pf = p.all_findings()
-        table.add_row(p.name, "deep" if p.deep else "inventory", str(len(p.repos)), str(len(p.pipelines)),
+        releases = sum(1 for r in p.pipelines.values() if r.pipeline.kind == "classic_release")
+        table.add_row(p.name, "deep" if p.deep else "inventory", str(len(p.repos)), str(len(p.pipelines) - releases), str(releases),
                       str(sum(1 for f in pf if f.severity == "blocker")), str(sum(1 for f in pf if f.severity == "high")))
     console.print(table)
     console.print(f"Workbook: [bold]{paths['workbook']}[/bold]")

@@ -193,7 +193,7 @@ def _summary(book: Book, result: AnalysisResult) -> None:
         ])
     row = book.table(ws, [
         ("Project", 28, TEXT), ("Mode", 10, TEXT), ("Repos", 7, INT), ("Active", 7, INT), ("Dormant", 8, INT), ("Dead", 6, INT),
-        ("Disabled", 8, INT), ("YAML", 6, INT), ("Classic build", 12, INT), ("Classic release", 14, INT), ("Low", 6, INT),
+        ("Disabled", 8, INT), ("YAML pipelines", 14, INT), ("Classic builds", 13, INT), ("Classic releases", 15, INT), ("Low", 6, INT),
         ("Medium", 8, INT), ("High", 6, INT), ("Blocker findings", 15, INT), ("High findings", 12, INT), ("TFVC", 6, TEXT), ("Data as of", 20, TEXT),
     ], project_rows, start_row=row, title="Projects", freeze=False)
     counts = Counter((f.id, f.severity, f.title) for f in result.all_findings())
