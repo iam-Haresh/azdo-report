@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import openpyxl
+from openpyxl.utils.cell import range_boundaries
 
 from azdo_analyzer.analyze import run_analysis
 from azdo_analyzer.report import write_reports
+from azdo_analyzer.report.excel import NOTE
 from tests.fixtures.sample_data import NOW, PROJECT
 
 EXPECTED_SHEETS = [
@@ -13,6 +15,14 @@ EXPECTED_SHEETS = [
     "Service Connections", "Secure Files", "Agents & Pools", "Environments & Deploy Groups", "Branch Policies",
     "Dependencies", "Findings", "Archetypes", "Coverage",
 ]
+
+
+def table_rows(ws) -> list[dict]:
+    """The rows of a sheet's first table, keyed by header (tables start below the note)."""
+    min_col, min_row, max_col, max_row = range_boundaries(next(iter(ws.tables.values())).ref)
+    header = [ws.cell(row=min_row, column=c).value for c in range(min_col, max_col + 1)]
+    return [dict(zip(header, r)) for r in ws.iter_rows(min_row=min_row + 1, max_row=max_row, min_col=min_col, max_col=max_col,
+                                                        values_only=True)]
 
 
 def _run(cfg, rules, provider):
@@ -77,9 +87,10 @@ def test_reports_written(sample_cfg, rules, provider):
     result, paths = _run(sample_cfg, rules, provider)
     wb = openpyxl.load_workbook(paths["workbook"])
     assert wb.sheetnames == EXPECTED_SHEETS
-    tracker = wb["Tracker"]
-    header = [c.value for c in tracker[1]]
-    rows = {r[header.index("Repo")]: dict(zip(header, r)) for r in tracker.iter_rows(min_row=2, values_only=True)}
+    for ws in wb.worksheets:  # the amber disclaimer tops every sheet, frozen with the header
+        assert ws["A1"].value == NOTE and ws["A1"].fill.fgColor.rgb == "FFFFC000", ws.title
+        assert ws.title == "Summary" or ws.freeze_panes == "A4", ws.title
+    rows = {r["Repo"]: r for r in table_rows(wb["Tracker"])}
     assert rows["legacy-web"]["Complexity"] == "High" and rows["legacy-web"]["Pipeline type"] == "Classic build, Classic release"
     assert rows["pipeline-templates"]["Pipeline type"] == "templates for payments-api-ci"
     dossier = paths["dossiers"]["Contoso Retail/legacy-web"].read_text()
@@ -107,9 +118,7 @@ def test_second_run_diff_and_overrides(sample_cfg, rules, provider):
     assert "_No changes._" in paths["diff"].read_text()
     legacy = next(r for r in result.projects[0].repos if r.name == "legacy-web")
     assert legacy.archetype == "Legacy IIS"
-    tracker = openpyxl.load_workbook(paths["workbook"])["Tracker"]
-    header = [c.value for c in tracker[1]]
-    row = next(dict(zip(header, r)) for r in tracker.iter_rows(min_row=2, values_only=True) if r[header.index("Repo")] == "legacy-web")
+    row = next(r for r in table_rows(openpyxl.load_workbook(paths["workbook"])["Tracker"]) if r["Repo"] == "legacy-web")
     assert (row["Wave"], row["Owner"], row["Status"], row["Archetype"]) == ("2", "team-web", "In analysis", "Legacy IIS")
 
 

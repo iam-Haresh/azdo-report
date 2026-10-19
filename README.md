@@ -1,5 +1,9 @@
 # azdo-analyzer
 
+> ⚠ **For initial reference only: the results are not 100% accurate. Please do your own analysis as well.**
+> The tool does not exclude test repos, pipelines or releases; they are analysed and counted like everything else. Whole projects can be left out with `scope.exclude_projects` in `config.yaml`. A single test repo can only be marked in `overrides.yaml` (for example `recommendation: Skip (test repo)`), and it is still counted.
+> Every sheet of the workbook repeats this note in an amber row at the top.
+
 Read-only analysis of **Azure DevOps Server 2022** projects, for planning and building their **GitLab.com** pipelines, one project at a time.
 
 It pulls repos, YAML and classic build pipelines, classic releases, variables, connections, environments, agents and policies through the REST API with a **read-only PAT**. Its outputs:

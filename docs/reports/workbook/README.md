@@ -2,7 +2,7 @@
 
 [Report guide](../README.md) › Workbook
 
-`out/reports/<date>/azdo-analysis-<label>.xlsx` has one table per sheet. Every table can be filtered and sorted with the arrows in its header row, and the header stays visible while you scroll.
+`out/reports/<date>/azdo-analysis-<label>.xlsx` has one table per sheet. Row 1 of every sheet is an amber note: the results are for initial reference only and not 100% accurate, and test repos, pipelines and releases are not excluded. Every table can be filtered and sorted with the arrows in its header row, and the note and the header stay visible while you scroll.
 
 ## Sheets
 

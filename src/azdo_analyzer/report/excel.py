@@ -15,6 +15,9 @@ from azdo_analyzer.util import compact
 
 TEXT, INT, FLOAT, DATE, BOOL, URL, LINK = "text", "int", "float", "date", "bool", "url", "link"
 Column = tuple[str, int, str]
+NOTE = ("⚠ For initial reference only, not 100% accurate: please do your own analysis as well. "
+        "Test repos, pipelines and releases are not excluded.")
+TOP = 2  # every sheet: row 1 = the amber note, row 2 = spacer, tables from row 3
 
 _SEVERITY = {"blocker": "#F8696B", "high": "#FFB3B3", "medium": "#FFE699", "low": "#DDEBF7", "info": "#EDEDED"}
 _LEVEL = {"High": "#FFB3B3", "Medium": "#FFE699", "Low": "#C6EFCE"}
@@ -32,6 +35,8 @@ class Book:
         self.title = self.wb.add_format({"bold": True, "font_size": 14})
         self.subtitle = self.wb.add_format({"bold": True, "font_size": 11, "font_color": "#1F4E79"})
         self.link = self.wb.add_format({"font_color": "#0563C1", "underline": 1})
+        self.note = self.wb.add_format({"bold": True, "bg_color": "#FFC000", "font_color": "#3A2A00", "valign": "vcenter", "indent": 1})
+        self._noted: set[str] = set()
         self.fills = {color: self.wb.add_format({"bg_color": color}) for color in
                       set(_SEVERITY.values()) | set(_LEVEL.values()) | set(_ACTIVITY.values()) | set(_STATUS.values())}
         self._tables = 0
@@ -40,7 +45,20 @@ class Book:
         self.wb.close()
 
     def sheet(self, name: str):
-        return self.wb.add_worksheet(name[:31])
+        ws = self.wb.add_worksheet(name[:31])
+        ws.set_row(0, 24)
+        ws.set_row(1, 6)
+        return ws
+
+    def add_note(self, ws, width: int) -> None:
+        """The amber disclaimer across the top of the sheet, as wide as its first table."""
+        if ws.name in self._noted:
+            return
+        self._noted.add(ws.name)
+        if width > 1:
+            ws.merge_range(0, 0, 0, width - 1, NOTE, self.note)
+        else:
+            ws.write_string(0, 0, NOTE, self.note)
 
     def write_cell(self, ws, row: int, col: int, value: Any, kind: str) -> None:
         if value is None or value == "":
@@ -64,9 +82,10 @@ class Book:
             text = value if isinstance(value, str) else str(value)
             ws.write_string(row, col, text[:32000])
 
-    def table(self, ws, columns: list[Column], rows: Iterable[list[Any]], *, start_row: int = 0, title: str | None = None,
+    def table(self, ws, columns: list[Column], rows: Iterable[list[Any]], *, start_row: int = TOP, title: str | None = None,
               freeze: bool = True, colorize: dict[str, dict[str, str]] | None = None) -> int:
         rows = list(rows)
+        self.add_note(ws, len(columns))
         if title:
             ws.write_string(start_row, 0, title, self.subtitle)
             start_row += 1
@@ -84,8 +103,8 @@ class Book:
         for r, row in enumerate(rows, start=start_row + 1):
             for c, (_, _, kind) in enumerate(columns):
                 self.write_cell(ws, r, c, row[c] if c < len(row) else None, kind)
-        if freeze and start_row == 0:
-            ws.freeze_panes(1, 0)
+        if freeze and start_row == TOP:
+            ws.freeze_panes(TOP + 1, 0)  # the note and the header stay visible
         for header, palette in (colorize or {}).items():
             col = next((i for i, (h, _, _) in enumerate(columns) if h == header), None)
             if col is None:
@@ -134,7 +153,7 @@ def write_workbook(result: AnalysisResult, path: Path, dossier_link: Callable[[R
 
 def _summary(book: Book, result: AnalysisResult) -> None:
     ws = book.sheet("Summary")
-    ws.write_string(0, 0, "AZDO -> GitLab migration analysis", book.title)
+    ws.write_string(TOP, 0, "AZDO -> GitLab migration analysis", book.title)
     info = [
         ("Generated", result.generated.strftime("%Y-%m-%d %H:%M UTC")),
         ("Collection", result.cfg.azdo.collection_url or "(offline)"),
@@ -142,10 +161,10 @@ def _summary(book: Book, result: AnalysisResult) -> None:
         ("Projects", ", ".join(p.name for p in result.projects)),
         ("Activity windows", f"Active <= {result.cfg.analysis.active_days} days, Dormant <= {result.cfg.analysis.dormant_days} days; run history {result.cfg.collection.history_days} days"),
     ]
-    for i, (k, v) in enumerate(info, start=2):
+    for i, (k, v) in enumerate(info, start=TOP + 2):
         ws.write_string(i, 0, k, book.header)
         ws.write_string(i, 1, v)
-    row = len(info) + 3
+    row = TOP + len(info) + 3
     project_rows = []
     for p in result.projects:
         statuses = Counter(r.status for r in p.repos)
