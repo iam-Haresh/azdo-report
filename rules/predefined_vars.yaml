@@ -1,0 +1,78 @@
+# AZDO predefined variables -> GitLab CI/CD predefined variables (annotation hints).
+# Keys are matched case-insensitively; "X.*" matches any variable under X.
+# The environment-variable form (BUILD_SOURCESDIRECTORY) is matched automatically.
+variables:
+  Build.SourcesDirectory: {gitlab: CI_PROJECT_DIR}
+  Build.Repository.LocalPath: {gitlab: CI_PROJECT_DIR}
+  System.DefaultWorkingDirectory: {gitlab: CI_PROJECT_DIR, notes: "release artifact paths ($(System.DefaultWorkingDirectory)/_alias/drop) change"}
+  Pipeline.Workspace: {gitlab: CI_BUILDS_DIR, notes: "use CI_PROJECT_DIR for sources"}
+  Agent.BuildDirectory: {gitlab: CI_BUILDS_DIR}
+  Build.ArtifactStagingDirectory: {gitlab: "a folder under CI_PROJECT_DIR + artifacts:paths", notes: "no built-in staging directory"}
+  Build.StagingDirectory: {gitlab: "a folder under CI_PROJECT_DIR + artifacts:paths"}
+  Build.BinariesDirectory: {gitlab: "a folder under CI_PROJECT_DIR"}
+  Common.TestResultsDirectory: {gitlab: "a folder under CI_PROJECT_DIR + artifacts:reports:junit"}
+  Agent.TempDirectory: {gitlab: "mktemp -d (or $CI_BUILDS_DIR/tmp)"}
+  Agent.ToolsDirectory: {gitlab: "bake tools into the job image"}
+  Agent.OS: {gitlab: "runner tags / image choice", notes: "no direct variable"}
+  Agent.Name: {gitlab: CI_RUNNER_DESCRIPTION}
+  Agent.MachineName: {gitlab: CI_RUNNER_DESCRIPTION}
+  Agent.JobStatus: {gitlab: CI_JOB_STATUS}
+  Build.BuildId: {gitlab: CI_PIPELINE_ID}
+  Build.BuildNumber: {gitlab: "CI_PIPELINE_IID or a computed version", notes: "custom build number formats must be recreated"}
+  Build.DefinitionName: {gitlab: CI_PROJECT_NAME}
+  Build.DefinitionId: {gitlab: CI_PROJECT_ID}
+  Build.SourceBranch: {gitlab: CI_COMMIT_REF_NAME, notes: "no refs/heads/ prefix in GitLab"}
+  Build.SourceBranchName: {gitlab: CI_COMMIT_REF_NAME}
+  Build.SourceVersion: {gitlab: CI_COMMIT_SHA}
+  Build.SourceVersionMessage: {gitlab: CI_COMMIT_MESSAGE}
+  Build.SourceVersionAuthor: {gitlab: CI_COMMIT_AUTHOR}
+  Build.Repository.Name: {gitlab: CI_PROJECT_NAME}
+  Build.Repository.Uri: {gitlab: CI_REPOSITORY_URL}
+  Build.Repository.ID: {gitlab: CI_PROJECT_ID}
+  Build.RequestedFor: {gitlab: GITLAB_USER_NAME}
+  Build.RequestedForEmail: {gitlab: GITLAB_USER_EMAIL}
+  Build.RequestedForId: {gitlab: GITLAB_USER_ID}
+  Build.QueuedBy: {gitlab: GITLAB_USER_LOGIN}
+  Build.Reason: {gitlab: CI_PIPELINE_SOURCE, notes: "values differ: push, merge_request_event, schedule, web, pipeline, trigger"}
+  Build.BuildUri: {gitlab: CI_PIPELINE_URL}
+  Build.TriggeredBy.*: {gitlab: "CI_PIPELINE_SOURCE=pipeline + variables passed by the upstream trigger"}
+  System.AccessToken: {gitlab: "CI_JOB_TOKEN (limited scope) or a project access token", notes: "scripts calling the AZDO API must be rewritten"}
+  System.TeamProject: {gitlab: CI_PROJECT_NAMESPACE}
+  System.TeamProjectId: {gitlab: CI_PROJECT_NAMESPACE_ID}
+  System.CollectionUri: {gitlab: CI_SERVER_URL}
+  System.TeamFoundationCollectionUri: {gitlab: CI_SERVER_URL}
+  System.TeamFoundationServerUri: {gitlab: CI_SERVER_URL}
+  System.DefinitionId: {gitlab: CI_PROJECT_ID}
+  System.JobId: {gitlab: CI_JOB_ID}
+  System.JobName: {gitlab: CI_JOB_NAME}
+  System.JobDisplayName: {gitlab: CI_JOB_NAME}
+  System.StageName: {gitlab: CI_JOB_STAGE}
+  System.StageDisplayName: {gitlab: CI_JOB_STAGE}
+  System.PhaseName: {gitlab: CI_JOB_NAME}
+  System.Debug: {gitlab: CI_DEBUG_TRACE}
+  System.HostType: {gitlab: "no equivalent", notes: "build vs release distinction disappears"}
+  System.PullRequest.PullRequestId: {gitlab: CI_MERGE_REQUEST_IID}
+  System.PullRequest.PullRequestNumber: {gitlab: CI_MERGE_REQUEST_IID}
+  System.PullRequest.SourceBranch: {gitlab: CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
+  System.PullRequest.TargetBranch: {gitlab: CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
+  System.PullRequest.SourceCommitId: {gitlab: CI_MERGE_REQUEST_SOURCE_BRANCH_SHA}
+  System.PullRequest.SourceRepositoryURI: {gitlab: CI_MERGE_REQUEST_SOURCE_PROJECT_URL}
+  System.PullRequest.IsFork: {gitlab: "CI_MERGE_REQUEST_SOURCE_PROJECT_ID != CI_PROJECT_ID"}
+  Release.ReleaseId: {gitlab: CI_PIPELINE_ID}
+  Release.ReleaseName: {gitlab: "CI_PIPELINE_IID or CI_COMMIT_TAG"}
+  Release.ReleaseWebURL: {gitlab: CI_PIPELINE_URL}
+  Release.EnvironmentName: {gitlab: CI_ENVIRONMENT_NAME}
+  Release.EnvironmentUri: {gitlab: CI_ENVIRONMENT_URL}
+  Release.DefinitionName: {gitlab: CI_PROJECT_NAME}
+  Release.DefinitionId: {gitlab: CI_PROJECT_ID}
+  Release.Deployment.RequestedFor: {gitlab: GITLAB_USER_NAME}
+  Release.RequestedFor: {gitlab: GITLAB_USER_NAME}
+  Release.AttemptNumber: {gitlab: "no equivalent"}
+  Release.Artifacts.*: {gitlab: "needs:/dependencies: artifacts or variables from the build job (dotenv)", notes: "artifact alias paths change"}
+  Release.PrimaryArtifactSourceAlias: {gitlab: "no equivalent"}
+  Environment.Name: {gitlab: CI_ENVIRONMENT_NAME}
+  Environment.Id: {gitlab: "CI_ENVIRONMENT_NAME (no numeric id)"}
+  Environment.ResourceName: {gitlab: "kubernetes namespace / agent context variable"}
+  Strategy.Name: {gitlab: "no equivalent (runOnce/rolling/canary are explicit jobs)"}
+  Resources.Pipeline.*: {gitlab: "upstream pipeline variables (trigger:forward / dotenv)"}
+  TF.Build: {gitlab: "GITLAB_CI"}

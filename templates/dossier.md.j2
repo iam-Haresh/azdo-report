@@ -1,0 +1,207 @@
+# {{ repo.name }} — migration dossier
+
+**Project:** {{ project.name }} · **GitLab path:** `{{ repo.gitlab_path }}`{% if repo.slug_collision %} ⚠ slug collision{% endif %} · **Generated:** {{ generated }} · **Data as of:** {{ fetched_at }} ({{ mode }})
+
+| Archetype | Complexity | Score | Activity | Recommendation | Template | Wave | Owner | Status |
+|---|---|---|---|---|---|---|---|---|
+| {{ repo.archetype|cell }} | {{ repo.complexity }}{% if repo.score.blocker %} ⛔ blocker{% endif %} | {{ repo.score.points }} | {{ repo.status }} | {{ (o.recommendation or repo.recommendation)|cell }} | {{ (o.template or repo.profile.template or "")|cell }} | {{ o.wave or "" }} | {{ o.owner or "" }} | {{ o.status or "Not started" }} |
+
+Archetype key: `{{ repo.profile.key }}` · Score breakdown: {{ repo.score.describe() or "—" }}
+{% if o.notes %}
+Notes: {{ o.notes }}
+{% endif %}
+{% if serious %}
+> **Blockers / high-severity findings**
+{% for f in serious %}
+> - **{{ f.id }}** ({{ f.severity }}){% if f.pipeline %} — {{ f.pipeline }}{% endif %}: {{ f.detail|cell }}
+{% endfor %}
+{% endif %}
+
+Legend: `[x]` filled automatically from Azure DevOps · `[ ]` needs a person.
+
+## 1. Project level
+
+- [ ] Owner team, business criticality — _manual_{% if o.owner %} (owner from overrides: {{ o.owner }}){% endif +%}
+- [x] Project **{{ project.name }}**: {{ project.repos|length }} repos, {{ n_builds }} build/YAML pipelines, {{ n_releases }} classic releases{% if project.tfvc %} · ⚠ **TFVC in use**{% endif +%}
+- [x] Linked to this repo: {{ builds|length }} build/YAML pipeline(s){% if builds %} ({{ builds|map(attribute="name")|join(", ") }}){% endif %}, {{ releases|length }} classic release(s){% if releases %} ({{ releases|map(attribute="name")|join(", ") }}){% endif +%}
+{% if repo.template_for %}
+- [x] Used as a template / checkout repository by: {{ repo.template_for|join(", ") }}
+{% endif %}
+- [x] Activity: last commit {{ repo.activity.last_commit_any|d }}, last pipeline run {{ last_run|d }}, last deployment {{ last_deploy|d }} → **{{ repo.status }}**
+
+## 2. Repository
+
+- [x] Size: {{ size_mb }}{% if lfs %} · LFS patterns: {{ lfs }}{% else %} · no LFS{% endif %}{% if repo.repo.get("isFork") %} · fork{% endif %}{% if repo.repo.get("isDisabled") %} · **disabled**{% endif +%}
+- [x] Default branch `{{ default_branch }}` · {{ repo.activity.branches }} branches ({{ repo.activity.stale_branches }} stale) · branching model: {{ repo.activity.branching_model }}
+- [x] Branch policies: {% if repo.policies %}{{ repo.policies|length }} (table below){% else %}none{% endif +%}
+- [x] Path-based required reviewers → `CODEOWNERS`: {{ codeowners or "none" }}
+- [x] Tags: {{ repo.activity.tags }}{% if repo.activity.tag_samples %} (e.g. {{ repo.activity.tag_samples|join(", ") }}){% endif +%}
+- [x] Submodules / cross-repo references: {{ submodules or "no submodules" }}{% if cross_repo %} · {{ cross_repo }}{% endif +%}
+- [x] Open PRs: {{ repo.activity.open_prs }}{% if repo.activity.oldest_pr_days is not none %} (oldest {{ repo.activity.oldest_pr_days }} days){% endif %} — merge or close before cutover
+- [ ] Repo permissions; who can push / bypass policies — _manual (not collected)_
+- [x] Hard-coded AZDO URLs / badges / feed configs in files: {{ url_summary }}
+- [x] PR templates: {{ pr_templates or "none" }}
+{% if repo.policies %}
+
+| Branch | Policy | Blocking | Settings | GitLab equivalent |
+|---|---|---|---|---|
+{% for x in repo.policies %}| {{ x.branch|cell }} | {{ x.policy|cell }} | {{ x.blocking|yn }} | {{ x.settings|cell }} | {{ x.gitlab|cell }} |
+{% endfor %}
+{% endif %}
+
+## 3. Build pipelines
+{% if not builds %}
+
+_No build/YAML pipeline builds this repository._
+{% endif %}
+{% for b in builds %}
+
+### {{ b.name }} — {{ b.kind }}{% if b.url %} ([open]({{ b.url }})){% endif +%}
+
+- [x] Type: {{ b.kind }}{% if b.yaml_path %} · `{{ b.yaml_path }}`{% endif %}{% if b.extends %} · extends `{{ b.extends }}`{% endif %}{% if not b.enabled %} · **disabled/paused**{% endif %}{% if b.depth == "inventory" %} · inventory data only{% endif +%}
+- [x] Triggers: {{ b.triggers }}
+- [x] Agent pool: {{ b.pools or "—" }}{% if b.demands %} · demands: {{ b.demands }}{% endif %}{% if b.windows %} · ⚠ Windows: {{ b.windows }}{% endif +%}
+- [x] Toolchain hints: {{ b.toolchain or "—" }}
+- [x] Tasks: {{ b.task_count }} distinct{% if b.unmapped %} · unmapped: {{ b.unmapped }}{% endif %}{% if b.marketplace %} · marketplace: {{ b.marketplace }}{% endif +%}
+- [x] YAML templates / extends from other repos: {{ b.templates or "none" }}{% if b.unresolved %} · ⚠ unresolved: {{ b.unresolved }}{% endif %}{% if b.dynamic %} · conditional template logic{% endif +%}
+- [x] Build number format: {{ b.build_number or "default" }}
+- [x] Tests: {{ b.tests or "no test results published" }}
+- [x] Quality gates: {{ b.quality or "none found" }}
+- [x] Artifacts produced: {{ b.artifacts or "none published" }}
+- [x] Caching: {{ b.cache }}
+- [x] Matrix / parallel / containers: {{ b.matrix or "none" }}
+- [x] Runs ({{ window }} days): {{ b.runs }}
+- [x] Variables: {{ b.variables }}{% if b.groups %} · groups: {{ b.groups }}{% endif %}{% if b.parameters %} · parameters: {{ b.parameters }}{% endif +%}
+- [x] Checkout: {{ b.checkout }}
+{% if b.hidden_ui %}- [x] ⚠ Defined outside the YAML file: {{ b.hidden_ui }}
+{% endif %}
+{% if b.timeline %}- [x] Last good run vs static analysis: {{ b.timeline }}
+{% endif %}
+{% if b.warnings %}- [x] Normalization warnings: {{ b.warnings }}
+{% endif %}
+
+| Task | Uses | Source | GitLab approach | Effort |
+|---|---|---|---|---|
+{% for t in b.tasks %}| {{ t.task|cell }} | {{ t.uses }} | {{ t.source }} | {{ t.gitlab|cell }} | {{ t.effort }} |
+{% endfor %}
+{% endfor %}
+
+## 4. Release / deployment pipelines
+{% if not releases and not yaml_deploys %}
+
+_No classic release or YAML deployment stage deploys this repository._
+{% endif %}
+{% for r in releases %}
+
+### {{ r.name }} — Classic release{% if r.url %} ([open]({{ r.url }})){% endif +%}
+
+- [x] Artifact sources: {{ r.artifacts or "—" }}
+- [x] Release triggers: {{ r.triggers or "manual" }}
+- [x] Release name format: `{{ r.release_name_format or "default" }}`
+- [x] Stages: {{ r.stages|length }} (table below){% if r.deployment_groups %} · deployment groups: {{ r.deployment_groups }}{% endif +%}
+- [x] Approvals: {{ r.approvals or "none" }}{% if r.approvers %} · approvers: {{ r.approvers }}{% endif +%}
+- [x] Gates: {{ r.gates or "none" }}{% if r.manual %} · manual interventions: {{ r.manual }}{% endif +%}
+- [x] Environment-specific variables: {{ r.stage_variables }}{% if r.groups %} · groups: {{ r.groups }}{% endif +%}
+- [x] Config transforms / token replacement: {{ r.config_transforms or "none found" }}
+- [x] Process parameters: {{ r.parameters or "none" }}
+- [x] Retention: {{ r.retention or "default" }}
+- [ ] Rollback / redeploy process — _manual_
+- [ ] Audit / evidence requirements (compliance) — _manual_
+
+| Stage | Trigger | Pre-approvers | Post-approvers | Gates | Jobs | Queue policy | Deploy tasks | Deployments | Last |
+|---|---|---|---|---|---|---|---|---|---|
+{% for s in r.stages %}| {{ s.stage|cell }} | {{ s.trigger|cell }} | {{ s.pre_approvers|cell }} | {{ s.post_approvers|cell }} | {{ s.gates|cell }} | {{ s.jobs|cell }} | {{ s.queue_policy|cell }} | {{ s.tasks|cell }} | {{ s.deployments }} | {{ s.last_deployed|d }} |
+{% endfor %}
+{% endfor %}
+{% for y in yaml_deploys %}
+
+### {{ y.name }} — YAML deployment stages
+
+| Stage | Environment | Approvals / checks | Gates | Jobs | Deploy tasks | Deployments | Last |
+|---|---|---|---|---|---|---|---|
+{% for s in y.stages %}| {{ s.stage|cell }} | {{ s.environment|cell }} | {{ y.approvals|cell }} | {{ y.gates|cell }} | {{ s.jobs|cell }} | {{ s.tasks|cell }} | {{ s.deployments }} | {{ s.last_deployed|d }} |
+{% endfor %}
+{% endfor %}
+
+## 5. Variables, secrets and connections
+
+- [x] Pipeline/stage variables: {{ var_summary }}
+- [x] Variable groups: {{ groups_summary or "none" }}
+- [x] Key Vault-linked groups: {{ keyvault or "none" }}
+- [x] Secure files: {{ secure_files or "none" }}
+- [x] Service connections: {{ connections|length }} (table below)
+- [ ] Secret owners / source of truth for re-entry (values cannot be exported) — _manual_
+- [ ] Service account / token owners and expiry dates — _manual_
+{% if variables %}
+
+| Scope | Owner | Variable | Secret | Valid GitLab key | Proposed key | Proposed GitLab level |
+|---|---|---|---|---|---|---|
+{% for v in variables %}| {{ v.scope_type }} | {{ v.owner|cell }} | {{ v.name|cell }} | {{ v.secret|yn }} | {{ v.valid_key|yn }} | {{ v.proposed_key|cell }} | {{ v.proposed_level|cell }} |
+{% endfor %}
+{% if variables_truncated %}
+_{{ variables_truncated }} more rows in the workbook (Variables sheet)._
+{% endif %}
+{% endif %}
+{% if connections %}
+
+| Connection | Type | Auth | URL | Internal | Last used | GitLab replacement |
+|---|---|---|---|---|---|---|
+{% for c in connections %}| {{ c.name|cell }} | {{ c.type|cell }} | {{ c.scheme|cell }} | {{ c.url|cell }} | {{ c.internal|yn }} | {{ c.last_used|d }} | {{ c.gitlab|cell }} |
+{% endfor %}
+{% endif %}
+
+## 6. Artifacts and feeds
+
+- [x] Azure Artifacts feeds referenced in repo config: {{ feeds or "none" }}
+- [x] Other registries referenced: {{ registries or "none" }}
+- [x] Container base images: {{ base_images or "none" }}
+- [x] Universal packages / cross-pipeline artifact downloads: {{ cross_artifacts or "none" }}
+- [ ] Target registry decision (GitLab package registry vs Artifactory) and snapshot/release mapping — _manual_
+
+## 7. Dependencies and integrations
+
+- [x] Upstream pipelines that trigger this one: {{ upstream or "none" }}
+- [x] Downstream pipelines triggered by this one: {{ downstream or "none" }}
+- [x] Shared template repositories: {{ template_repos or "none" }}
+- [x] Service hooks in the project: {{ hooks or "none" }}
+- [x] AZDO-specific script constructs: {{ script_constructs or "none found" }}
+- [ ] Notifications / dashboards built on AZDO data — _manual_
+
+## 8. Identity and access
+
+- [x] Approvers that must exist in GitLab: {{ approvers or "none" }}
+- [ ] AZDO groups/teams → GitLab group roles; Entra ID SSO/SCIM — _manual_
+- [ ] Segregation of duties / evidence retention — _manual_
+
+## 9. Network and runners
+
+- [x] Runner OS: {{ runner_os }}
+- [x] Tools the runner image needs: {{ runner_tools or "—" }}
+- [x] Internal-only targets (need self-managed runners in the network or the GitLab agent for Kubernetes): {{ internal or "none found" }}
+- [x] AZDO pools used (peak concurrency / build min per month): {{ pool_usage or "—" }}
+- [ ] Firewall egress to GitLab.com, internal CA on runners — _manual_
+
+## 10. Cutover and validation
+
+- [ ] Push the repo from inside the network (GitLab.com usually can't pull from the on-prem server); keep it in sync during the parallel run
+- [ ] Parallel run on the same commit: compare artifacts, test counts, durations
+- [ ] Disable AZDO pipelines, make the AZDO repo read-only, update badges/links/webhooks/feed consumers
+- [ ] Rollback plan and sign-off
+
+## Findings
+{% if not findings %}
+
+_None._
+{% else %}
+
+| Severity | Finding | Pipeline | Detail | Remediation |
+|---|---|---|---|---|
+{% for f in findings %}| {{ f.severity }} | {{ f.id }} | {{ (f.pipeline or "")|cell }} | {{ f.detail|cell }} | {{ f.remediation|cell }} |
+{% endfor %}
+{% endif %}
+
+## Dependency graph
+
+```mermaid
+{{ mermaid }}
+```

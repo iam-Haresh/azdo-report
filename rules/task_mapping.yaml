@@ -1,0 +1,150 @@
+# AZDO task -> GitLab CI approach (analysis hints only; nothing is generated).
+#
+# Lookup order (case-insensitive): "Name@major", then "Name".
+# Fields:
+#   gitlab   - how the step is usually done in GitLab CI
+#   image    - suggested job image (optional)
+#   effort   - low | medium | high
+#   windows  - true when the task needs a Windows runner
+#   category - build | test | quality | artifact | deploy | infra | security | util | approval | toolchain
+#   notes    - gotchas
+# Unmapped tasks are listed (by usage) in the "Tasks" sheet - add them here as you decide.
+tasks:
+  # --- scripts & YAML shortcuts -------------------------------------------
+  CmdLine: {gitlab: "script: lines", effort: low, category: util}
+  script: {gitlab: "script: lines", effort: low, category: util}
+  Bash: {gitlab: "script: lines (bash image)", effort: low, category: util}
+  bash: {gitlab: "script: lines (bash image)", effort: low, category: util}
+  ShellScript: {gitlab: "script: ./file.sh", effort: low, category: util}
+  PowerShell: {gitlab: "script: with pwsh image, or a Windows runner for Windows PowerShell", image: "mcr.microsoft.com/powershell", effort: low, category: util, notes: "targetType inline/filePath; pwsh: true is cross-platform"}
+  pwsh: {gitlab: "script: lines in a pwsh image", image: "mcr.microsoft.com/powershell", effort: low, category: util}
+  powershell: {gitlab: "script: lines (Windows PowerShell on Windows runners, pwsh elsewhere)", effort: low, category: util, notes: "check for Windows-only cmdlets"}
+  BatchScript: {gitlab: "Windows runner, script: cmd /c file.bat", effort: medium, windows: true, category: util}
+  PythonScript: {gitlab: "script: python file.py", image: "python:3", effort: low, category: util}
+  checkout: {gitlab: "implicit clone; GIT_DEPTH / GIT_SUBMODULE_STRATEGY / GIT_STRATEGY variables", effort: low, category: util, notes: "multi-repo checkout -> extra git clone with CI_JOB_TOKEN"}
+  download: {gitlab: "needs: / dependencies: (artifacts)", effort: low, category: artifact}
+  downloadBuild: {gitlab: "needs:project (Premium) or package registry", effort: medium, category: artifact}
+  publish: {gitlab: "artifacts: paths:", effort: low, category: artifact}
+
+  # --- toolchain installers -------------------------------------------------
+  JavaToolInstaller: {gitlab: "pick a JDK image (eclipse-temurin)", image: "eclipse-temurin:<jdk>", effort: low, category: toolchain}
+  NodeTool: {gitlab: "pick a node image", image: "node:<version>", effort: low, category: toolchain}
+  UseNode: {gitlab: "pick a node image", image: "node:<version>", effort: low, category: toolchain}
+  UsePythonVersion: {gitlab: "pick a python image", image: "python:<version>", effort: low, category: toolchain}
+  UseDotNet: {gitlab: "pick a .NET SDK image", image: "mcr.microsoft.com/dotnet/sdk:<version>", effort: low, category: toolchain}
+  NuGetToolInstaller: {gitlab: "nuget/dotnet CLI in the image", effort: low, category: toolchain}
+  GoTool: {gitlab: "pick a golang image", image: "golang:<version>", effort: low, category: toolchain}
+  HelmInstaller: {gitlab: "helm in the job image", image: "alpine/helm", effort: low, category: toolchain}
+  KubectlInstaller: {gitlab: "kubectl in the job image", image: "bitnami/kubectl", effort: low, category: toolchain}
+  TerraformInstaller: {gitlab: "terraform/OpenTofu image", image: "hashicorp/terraform", effort: low, category: toolchain}
+  VisualStudioTestPlatformInstaller: {gitlab: "Windows runner image with VSTest", effort: medium, windows: true, category: toolchain}
+
+  # --- build ------------------------------------------------------------------
+  Maven: {gitlab: "mvn in a Maven image; settings.xml as a File variable; cache ~/.m2 (cache:key:files: [pom.xml])", image: "maven:3-eclipse-temurin-<jdk>", effort: low, category: build}
+  Gradle: {gitlab: "./gradlew in a JDK image; cache ~/.gradle", image: "gradle:<version>-jdk<jdk>", effort: low, category: build}
+  Ant: {gitlab: "ant in a JDK image (install ant)", image: "eclipse-temurin:<jdk>", effort: low, category: build}
+  DotNetCoreCLI: {gitlab: "dotnet build/test/publish in the SDK image", image: "mcr.microsoft.com/dotnet/sdk:<version>", effort: low, category: build}
+  NuGetCommand: {gitlab: "nuget/dotnet restore|pack|push; feed credentials as CI/CD variables", effort: low, category: build, notes: "push targets an Azure Artifacts feed? -> GitLab package registry or Artifactory"}
+  NuGetRestore: {gitlab: "dotnet restore / nuget restore", effort: low, category: build}
+  VSBuild: {gitlab: "Windows runner with VS Build Tools, msbuild in script:", effort: medium, windows: true, category: build}
+  MSBuild: {gitlab: "msbuild on a Windows runner (or dotnet msbuild for SDK-style projects)", effort: medium, windows: true, category: build}
+  Npm: {gitlab: "npm ci / npm run build in a node image; cache node_modules or ~/.npm", image: "node:<version>", effort: low, category: build}
+  Gulp: {gitlab: "npx gulp in a node image", image: "node:<version>", effort: low, category: build}
+  Grunt: {gitlab: "npx grunt in a node image", image: "node:<version>", effort: low, category: build}
+  Docker: {gitlab: "docker build/push with docker:dind, or kaniko/buildah; registry creds as variables", image: "docker:24 + docker:24-dind", effort: low, category: build}
+  DockerCompose: {gitlab: "docker compose in docker:dind", image: "docker:24", effort: medium, category: build}
+  gitversion/setup: {gitlab: "GitVersion CLI image (gittools/gitversion) + dotenv artifact", image: "gittools/gitversion", effort: low, category: build}
+  gitversion/execute: {gitlab: "GitVersion CLI image (gittools/gitversion) + dotenv artifact", image: "gittools/gitversion", effort: low, category: build, notes: "needs full history: GIT_DEPTH: 0"}
+  GitVersion: {gitlab: "GitVersion CLI image + dotenv artifact", image: "gittools/gitversion", effort: low, category: build}
+
+  # --- authentication helpers -------------------------------------------------
+  NuGetAuthenticate: {gitlab: "nuget source credentials from CI/CD variables or CI_JOB_TOKEN (GitLab registry)", effort: low, category: util}
+  npmAuthenticate: {gitlab: ".npmrc built from CI/CD variables or CI_JOB_TOKEN", effort: low, category: util}
+  MavenAuthenticate: {gitlab: "settings.xml (File variable) with server credentials / CI_JOB_TOKEN", effort: low, category: util}
+  PipAuthenticate: {gitlab: "PIP_INDEX_URL with credentials from CI/CD variables", effort: low, category: util}
+  TwineAuthenticate: {gitlab: "TWINE_USERNAME/TWINE_PASSWORD variables (gitlab-ci-token for GitLab registry)", effort: low, category: util}
+  InstallSSHKey: {gitlab: "ssh-agent + private key from a File/masked variable", effort: low, category: util}
+  DownloadSecureFile: {gitlab: "Project-level Secure Files (download-secure-files) or a File-type variable", effort: medium, category: util}
+
+  # --- tests & quality ---------------------------------------------------------
+  VSTest: {gitlab: "Windows runner (vstest.console) or dotnet test; convert TRX -> JUnit for test reports", effort: medium, windows: true, category: test}
+  PublishTestResults: {gitlab: "artifacts:reports:junit (JUnit XML only - convert TRX/NUnit/xUnit)", effort: low, category: test}
+  PublishCodeCoverageResults: {gitlab: "artifacts:reports:coverage_report (cobertura) + coverage: regex", effort: low, category: test}
+  SonarQubePrepare: {gitlab: "sonar-scanner CLI job (SONAR_HOST_URL/SONAR_TOKEN variables)", image: "sonarsource/sonar-scanner-cli", effort: low, category: quality}
+  SonarQubeAnalyze: {gitlab: "part of the sonar-scanner job", effort: low, category: quality}
+  SonarQubePublish: {gitlab: "sonar.qualitygate.wait=true in the scanner job", effort: low, category: quality}
+
+  # --- artifacts & packages ----------------------------------------------------
+  PublishBuildArtifacts: {gitlab: "artifacts: paths/expire_in", effort: low, category: artifact}
+  PublishPipelineArtifact: {gitlab: "artifacts: paths/expire_in", effort: low, category: artifact}
+  DownloadBuildArtifacts: {gitlab: "needs:/dependencies: (same pipeline) or needs:project (Premium)", effort: low, category: artifact}
+  DownloadPipelineArtifact: {gitlab: "needs:/dependencies: or needs:project (Premium)", effort: low, category: artifact}
+  CopyFiles: {gitlab: "cp/rsync in script:", effort: low, category: util}
+  ArchiveFiles: {gitlab: "zip/tar in script:", effort: low, category: util}
+  ExtractFiles: {gitlab: "unzip/tar in script:", effort: low, category: util}
+  DeleteFiles: {gitlab: "rm in script:", effort: low, category: util}
+  Cache: {gitlab: "cache: key:files / paths", effort: low, category: util}
+  UniversalPackages: {gitlab: "Generic package registry (curl with CI_JOB_TOKEN) or Artifactory generic repo", effort: medium, category: artifact}
+  ArtifactoryGenericUpload: {gitlab: "jf rt upload (JFrog CLI image) with token variable", image: "releases-docker.jfrog.io/jfrog/jfrog-cli-v2", effort: low, category: artifact}
+  ArtifactoryGenericDownload: {gitlab: "jf rt download (JFrog CLI image)", image: "releases-docker.jfrog.io/jfrog/jfrog-cli-v2", effort: low, category: artifact}
+  ArtifactoryMaven: {gitlab: "jf mvn or mvn deploy with settings.xml", effort: low, category: artifact}
+  ArtifactoryNpm: {gitlab: "jf npm / npm publish with .npmrc", effort: low, category: artifact}
+  ArtifactoryNuGet: {gitlab: "jf nuget / dotnet nuget push", effort: low, category: artifact}
+  JFrogGenericArtifacts: {gitlab: "jf rt upload/download (JFrog CLI image)", effort: low, category: artifact}
+  JFrogMaven: {gitlab: "jf mvn (JFrog CLI)", effort: low, category: artifact}
+  JFrogNpm: {gitlab: "jf npm (JFrog CLI)", effort: low, category: artifact}
+  GitHubRelease: {gitlab: "release: keyword / release-cli", effort: low, category: artifact}
+  PublishSymbols: {gitlab: "symbol server upload script (no built-in equivalent)", effort: high, windows: true, category: artifact}
+
+  # --- deploy: Kubernetes / OpenShift ------------------------------------------
+  KubernetesManifest: {gitlab: "kubectl apply via GitLab agent for Kubernetes (ci_access) or kubeconfig File variable", image: "bitnami/kubectl", effort: medium, category: deploy}
+  Kubernetes: {gitlab: "kubectl via GitLab agent for Kubernetes or kubeconfig File variable", image: "bitnami/kubectl", effort: medium, category: deploy}
+  HelmDeploy: {gitlab: "helm upgrade --install via GitLab agent for Kubernetes", image: "alpine/helm", effort: medium, category: deploy}
+  oc-cmd: {gitlab: "oc CLI image; login with service-account token variable or GitLab agent", image: "quay.io/openshift/origin-cli", effort: medium, category: deploy}
+  oc-setup: {gitlab: "oc CLI image + oc login in before_script", image: "quay.io/openshift/origin-cli", effort: low, category: deploy}
+  oc-conditional-cmd: {gitlab: "oc CLI with shell conditions", image: "quay.io/openshift/origin-cli", effort: medium, category: deploy}
+  config-map: {gitlab: "oc create configmap --dry-run=client -o yaml | oc apply -f -", effort: low, category: deploy}
+
+  # --- deploy: Windows / IIS / VMs ---------------------------------------------
+  IISWebAppDeploymentOnMachineGroup: {gitlab: "shell runner on the IIS host (tagged per env) running msdeploy/PowerShell, or WinRM from a Windows runner", effort: high, windows: true, category: deploy, notes: "XML transforms / variable substitution inputs must be replaced"}
+  IISWebAppManagementOnMachineGroup: {gitlab: "PowerShell WebAdministration module on a runner on the target", effort: high, windows: true, category: deploy}
+  IISWebAppDeployment: {gitlab: "msdeploy via WinRM from a Windows runner", effort: high, windows: true, category: deploy}
+  WindowsMachineFileCopy: {gitlab: "robocopy/PowerShell remoting from a Windows runner, or runner on target", effort: medium, windows: true, category: deploy}
+  PowerShellOnTargetMachines: {gitlab: "Invoke-Command (WinRM) from a Windows runner, or runner on target", effort: medium, windows: true, category: deploy}
+  SqlDacpacDeploymentOnMachineGroup: {gitlab: "SqlPackage on a runner that can reach the DB", effort: medium, windows: true, category: deploy}
+  SqlServerDacpacDeployment: {gitlab: "SqlPackage on a runner that can reach the DB", effort: medium, windows: true, category: deploy}
+  SqlAzureDacpacDeployment: {gitlab: "SqlPackage (mcr.microsoft.com/mssql-tools) with OIDC/AAD token", effort: medium, category: deploy}
+  SSH: {gitlab: "ssh in script: with key from a File variable", effort: low, category: deploy}
+  CopyFilesOverSSH: {gitlab: "scp/rsync in script: with key from a File variable", effort: low, category: deploy}
+  Ansible: {gitlab: "ansible-playbook in an Ansible image; inventory/keys as File variables", image: "cytopia/ansible", effort: medium, category: deploy}
+
+  # --- deploy: Azure ------------------------------------------------------------
+  AzureCLI: {gitlab: "az CLI image with OIDC (id_tokens + workload identity federation)", image: "mcr.microsoft.com/azure-cli", effort: medium, category: deploy}
+  AzurePowerShell: {gitlab: "Az PowerShell image with OIDC login", effort: medium, category: deploy}
+  AzureRmWebAppDeployment: {gitlab: "az webapp deploy with OIDC login", image: "mcr.microsoft.com/azure-cli", effort: medium, category: deploy}
+  AzureWebApp: {gitlab: "az webapp deploy with OIDC login", image: "mcr.microsoft.com/azure-cli", effort: medium, category: deploy}
+  AzureFunctionApp: {gitlab: "az functionapp deployment with OIDC login", image: "mcr.microsoft.com/azure-cli", effort: medium, category: deploy}
+  AzureResourceManagerTemplateDeployment: {gitlab: "az deployment group create (ARM/Bicep) with OIDC login", image: "mcr.microsoft.com/azure-cli", effort: medium, category: infra}
+  AzureResourceGroupDeployment: {gitlab: "az deployment group create with OIDC login", image: "mcr.microsoft.com/azure-cli", effort: medium, category: infra}
+  AzureFileCopy: {gitlab: "azcopy/az storage with OIDC login", effort: medium, windows: true, category: deploy}
+  AzureKeyVault: {gitlab: "secrets:azure_key_vault (Premium) with id_tokens, or az keyvault in script:", effort: medium, category: security}
+  AzureAppServiceManage: {gitlab: "az webapp start/stop/swap with OIDC", effort: low, category: deploy}
+  AzureAppServiceSettings: {gitlab: "az webapp config appsettings set with OIDC", effort: low, category: deploy}
+
+  # --- infrastructure as code ---------------------------------------------------
+  TerraformTaskV4: {gitlab: "OpenTofu/Terraform CI component or terraform CLI image; GitLab-managed state optional", image: "hashicorp/terraform", effort: medium, category: infra}
+  TerraformTaskV3: {gitlab: "OpenTofu/Terraform CI component or terraform CLI image", image: "hashicorp/terraform", effort: medium, category: infra}
+  TerraformCLI: {gitlab: "terraform CLI image", image: "hashicorp/terraform", effort: medium, category: infra}
+
+  # --- config transforms ----------------------------------------------------------
+  FileTransform: {gitlab: "envsubst / yq / jq / dotnet config transforms in script:", effort: medium, category: util}
+  replacetokens: {gitlab: "envsubst or a small token-replace script", effort: low, category: util, notes: "token pattern (#{x}#) must be preserved or converted"}
+
+  # --- approvals / agentless -------------------------------------------------------
+  ManualIntervention: {gitlab: "when: manual job (with protected environment approvals)", effort: low, category: approval}
+  ManualValidation: {gitlab: "when: manual job / deployment approval", effort: low, category: approval}
+  Delay: {gitlab: "when: delayed + start_in", effort: low, category: approval}
+  InvokeRESTAPI: {gitlab: "curl job (gate logic in script)", effort: medium, category: approval}
+  queryWorkItems: {gitlab: "custom script against your tracker (no equivalent)", effort: high, category: approval}
+  AzureMonitor: {gitlab: "script querying Azure Monitor alerts before deploy", effort: high, category: approval}
+  AzureFunction: {gitlab: "curl job calling the function", effort: medium, category: approval}

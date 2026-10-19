@@ -1,0 +1,37 @@
+# Content scan of cloned repos and inline pipeline scripts.
+# The AZDO server hostname from config.azdo.collection_url is added to AZDO_URL automatically.
+max_file_kb: 512
+max_hits_per_pattern: 50
+
+skip_extensions: [.png, .jpg, .jpeg, .gif, .ico, .svg, .bmp, .webp, .zip, .gz, .tgz, .7z, .rar, .jar, .war, .ear,
+  .dll, .exe, .pdb, .so, .dylib, .class, .pdf, .woff, .woff2, .ttf, .eot, .otf, .mp4, .mp3, .mov, .nupkg, .snupkg,
+  .snk, .pfx, .p12, .keystore, .jks, .cer, .crt, .der, .map, .ttc, .psd, .xlsx, .xls, .docx, .doc, .pptx, .bin, .dat, .db]
+skip_files: [package-lock.json, yarn.lock, pnpm-lock.yaml, poetry.lock, Pipfile.lock, packages.lock.json, composer.lock, Cargo.lock, go.sum]
+
+patterns:
+  - id: VSO_LOGGING_CMD
+    regex: '##vso\[([A-Za-z.]+)'
+    description: AZDO logging command (setvariable, updatebuildnumber, artifact.upload, ...)
+  - id: ACCESS_TOKEN
+    regex: '(?i)System\.AccessToken|SYSTEM_ACCESSTOKEN'
+    description: Uses the pipeline OAuth token
+  - id: PREDEFINED_VAR
+    regex: '\$\(((?:Build|Release|System|Agent|Pipeline|Environment|Strategy|Resources|Common)\.[A-Za-z0-9_.]+)\)'
+    description: AZDO predefined variable (macro syntax)
+  - id: PREDEFINED_ENV
+    regex: '\b((?:BUILD|RELEASE|SYSTEM|AGENT|PIPELINE|COMMON)_[A-Z0-9_]{3,})\b'
+    description: AZDO predefined variable (environment form) - only reported when it maps to a known variable
+  - id: AZDO_URL
+    regex: '(?i)https?://[^\s''"<>()\]]*(?:/_git/|/_apis/|/_build|/_release|/_packaging/|dev\.azure\.com|visualstudio\.com)[^\s''"<>()\]]*'
+    description: Hard-coded Azure DevOps URL
+  - id: STATUS_BADGE
+    regex: '(?i)_apis/build/status|_apis/public/build/definitions'
+    description: AZDO status badge
+
+feed_files: [nuget.config, .npmrc, .yarnrc, .yarnrc.yml, settings.xml, pom.xml, pip.conf, pip.ini, .pypirc,
+  build.gradle, build.gradle.kts, settings.gradle, settings.gradle.kts, Directory.Packages.props, paket.dependencies, requirements.txt]
+feed_url_regex: '(?i)https?://[^\s''"<>]+?/_packaging/([^/\s''"<>]+)'
+registry_url_regex: '(?i)https?://[^\s''"<>]*(?:artifactory|nexus|jfrog|registry|quay|harbor)[^\s''"<>]*'
+
+pr_template_paths: [.azuredevops/pull_request_template.md, .vsts/pull_request_template.md, docs/pull_request_template.md,
+  pull_request_template.md, .azuredevops/pull_request_template/]

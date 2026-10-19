@@ -1,0 +1,46 @@
+# Complexity scoring per pipeline. Repo complexity = max(pipeline scores) + repo-level points.
+# Baseline follows the checklist rule: YAML = Low, Classic = Medium,
+# Classic release with approvals + multiple stages = High.
+base:
+  yaml: 0
+  classic_build: 4
+  classic_release: 4
+
+points:
+  multi_stage_deploy: 3        # 2+ deploy stages
+  extra_deploy_stage: 1        # per deploy stage beyond 3
+  approvals: 2
+  gates: 3
+  manual_intervention: 1
+  deployment_group: 3
+  unmapped_task: 2             # per distinct task with no entry in task_mapping.yaml
+  marketplace_task: 1          # per distinct (mapped) extension task
+  task_group: 1                # per distinct task group
+  windows_toolchain: 2
+  keyvault: 2
+  secure_file: 1               # per secure file
+  cross_repo: 1
+  cross_pipeline_trigger: 2
+  vso_logging: 1
+  access_token: 2
+  config_transform: 1
+  dynamic_templates: 1
+  unresolved_templates: 2
+  hidden_ui_config: 1
+  multi_repo_checkout: 1
+
+caps:
+  extra_deploy_stage: 3
+  unmapped_task: 8
+  marketplace_task: 3
+  task_group: 3
+  secure_file: 3
+
+repo_points:
+  submodules: 1
+  lfs: 1
+  large_repo: 2
+
+thresholds:
+  low_max: 3       # 0-3 Low
+  medium_max: 8    # 4-8 Medium, 9+ High

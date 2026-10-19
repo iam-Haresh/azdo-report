@@ -1,0 +1,49 @@
+# Copy to config.yaml and adjust. The PAT is NOT stored here: export AZDO_PAT=... (or use the macOS Keychain).
+
+azdo:
+  # Azure DevOps Server 2022: https://<server>/<collection>  (older upgrades may include /tfs/)
+  collection_url: https://azdo.example.local/DefaultCollection
+  api_version: "7.0"            # run `azdo-analyzer doctor` - it prints the newest version your server accepts
+  pat_env: AZDO_PAT             # environment variable holding the read-only PAT
+  keychain_service: null        # optional: macOS Keychain generic-password service name holding the PAT
+  ca_bundle: null               # path to your corporate CA bundle (PEM) if the server uses an internal CA
+  verify_tls: true
+  timeout_seconds: 60
+  concurrency: 6                # parallel API calls - keep modest for an on-prem server
+  max_retries: 5
+
+scope:
+  projects: []                  # default projects for `inventory` without --all (empty = all)
+  exclude_projects: []
+
+collection:
+  history_days: 180             # run / deployment history window used for statistics
+  timelines_for_active_only: true
+  clone:
+    enabled: true               # deep `analyze` clones default branches (depth 1) for the content scan
+    max_repo_mb: 2048           # larger repos use the items API (tree listing) instead of a clone
+    concurrency: 4
+    git_binary: git
+
+analysis:
+  active_days: 90               # Active  = commit/run/deploy within this many days
+  dormant_days: 365             # Dormant = within this many days, otherwise Dead
+  redact_values: false          # true = never print plain variable values in reports
+  gitlab_tier: premium          # free | premium | ultimate (affects mapping hints, e.g. external status checks)
+  gitlab_repo_limit_gb: 10      # GitLab.com per-project repository limit
+  internal_host_patterns:       # hosts matching these regexes are treated as reachable only inside your network
+    - '\.local$'
+    - '\.corp\.'
+    - '\.internal$'
+    - '\.lan$'
+    - '^10\.'
+    - '^192\.168\.'
+    - '^172\.(1[6-9]|2[0-9]|3[01])\.'
+    - '^[^.]+$'
+
+output:
+  dir: out                      # raw cache, clones, model and reports (git-ignored)
+  overrides_file: overrides.yaml
+
+# rules_dir: rules              # default: ./rules next to the code
+# templates_dir: templates

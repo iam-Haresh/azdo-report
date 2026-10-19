@@ -1,0 +1,125 @@
+# Archetype detection: stack x build tool x deploy target x artifact.
+# Run `analyze`, look at the Archetypes sheet, then name the top 5-8 keys under `named:`.
+
+stacks:   # evaluated in order; first match is the primary stack (globs match file names anywhere in the repo)
+  - id: dotnet-framework
+    files: ["*.csproj", "*.vbproj"]
+    content_regex: '<TargetFramework(?:Version|s)?>[^<]*(?:v4\.|net4\d)'
+    windows: true
+  - id: dotnet
+    files: ["*.csproj", "*.fsproj", "*.vbproj", "*.sln", "global.json"]
+  - id: java-maven
+    files: [pom.xml]
+  - id: java-gradle
+    files: [build.gradle, build.gradle.kts]
+  - id: java-ant
+    files: [build.xml]
+  - id: node
+    files: [package.json]
+  - id: python
+    files: [requirements.txt, pyproject.toml, setup.py, Pipfile]
+  - id: go
+    files: [go.mod]
+  - id: terraform
+    files: ["*.tf"]
+  - id: ansible
+    files: [ansible.cfg, "playbook*.yml", site.yml]
+  - id: database
+    files: ["*.sqlproj", flyway.conf, liquibase.properties]
+  - id: powershell
+    files: ["*.psd1", "*.psm1"]
+
+markers:   # extra signals from files
+  docker: [Dockerfile, "*.Dockerfile", "Dockerfile.*", Containerfile]
+  helm: [Chart.yaml]
+  kustomize: [kustomization.yaml, kustomization.yml]
+  openshift: ["*.template.yaml", "*.template.yml"]
+
+build_tools:   # task name (without @major) -> build tool
+  Maven: maven
+  Gradle: gradle
+  Ant: ant
+  VSBuild: msbuild
+  MSBuild: msbuild
+  DotNetCoreCLI: dotnet
+  NuGetCommand: nuget
+  Npm: npm
+  Gulp: npm
+  Grunt: npm
+  UsePythonVersion: python
+  PythonScript: python
+  GoTool: go
+  TerraformTaskV4: terraform
+  TerraformTaskV3: terraform
+  TerraformCLI: terraform
+  Docker: docker
+
+stack_default_tool:   # used when no build task is found
+  dotnet-framework: msbuild
+  dotnet: dotnet
+  java-maven: maven
+  java-gradle: gradle
+  java-ant: ant
+  node: npm
+  python: python
+  go: go
+  terraform: terraform
+
+deploy_targets:
+  openshift:
+    tasks: [oc-cmd, oc-setup, oc-conditional-cmd, config-map]
+    endpoint_types: [openshift]
+    script_regex: '\boc\s+(apply|rollout|process|new-app|start-build|login|set|replace|create)\b'
+  kubernetes:
+    tasks: [KubernetesManifest, Kubernetes, HelmDeploy]
+    endpoint_types: [kubernetes]
+    script_regex: '\b(kubectl\s+(apply|rollout|set|replace|create)|helm\s+(upgrade|install))\b'
+  iis:
+    tasks: [IISWebAppDeploymentOnMachineGroup, IISWebAppManagementOnMachineGroup, IISWebAppDeployment]
+  windows-vm:
+    tasks: [PowerShellOnTargetMachines, WindowsMachineFileCopy, SqlDacpacDeploymentOnMachineGroup]
+    deployment_group: true
+  linux-vm:
+    tasks: [SSH, CopyFilesOverSSH]
+    endpoint_types: [ssh]
+  azure-app-service:
+    tasks: [AzureRmWebAppDeployment, AzureWebApp, AzureFunctionApp]
+  azure-infra:
+    tasks: [AzureResourceManagerTemplateDeployment, AzureResourceGroupDeployment]
+  terraform:
+    tasks: [TerraformTaskV4, TerraformTaskV3, TerraformCLI]
+    script_regex: '\bterraform\s+apply\b'
+  ansible:
+    tasks: [Ansible]
+    script_regex: '\bansible-playbook\b'
+
+artifact_rules:   # first match wins
+  - id: image
+    tasks: [Docker, DockerCompose]
+    markers: [docker]
+    script_regex: '\b(docker|podman|buildah)\s+(build|push)\b'
+  - id: package
+    task_inputs:
+      NuGetCommand: {command: [pack, push]}
+      DotNetCoreCLI: {command: [pack, push]}
+      Npm: {command: [publish]}
+      Maven: {goals: [deploy]}
+      UniversalPackages: {command: [publish]}
+  - id: chart
+    markers: [helm]
+  - id: files
+    tasks: [PublishBuildArtifacts, PublishPipelineArtifact, ArchiveFiles, publish]
+
+named:   # first match wins; any field may be omitted. deploy matches if the target is present.
+  - {name: "Java/Maven -> container -> OpenShift", template: java-maven-openshift, stack: java-maven, artifact: image, deploy: openshift}
+  - {name: "Java/Maven -> container -> Kubernetes", template: java-maven-k8s, stack: java-maven, artifact: image, deploy: kubernetes}
+  - {name: "Java/Maven library or app (no deploy)", template: java-maven-build, stack: java-maven, deploy: none}
+  - {name: ".NET Framework -> IIS (Windows)", template: dotnet-framework-iis, stack: dotnet-framework, deploy: iis}
+  - {name: ".NET Framework build (Windows)", template: dotnet-framework-build, stack: dotnet-framework}
+  - {name: ".NET -> container", template: dotnet-container, stack: dotnet, artifact: image}
+  - {name: ".NET package/library", template: dotnet-package, stack: dotnet, artifact: package}
+  - {name: "Node -> container", template: node-container, stack: node, artifact: image}
+  - {name: "Node build/publish", template: node-build, stack: node}
+  - {name: "Python", template: python, stack: python}
+  - {name: "Terraform / IaC", template: terraform, stack: terraform}
+  - {name: "Ansible", template: ansible, stack: ansible}

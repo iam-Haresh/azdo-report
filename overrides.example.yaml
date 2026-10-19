@@ -1,0 +1,13 @@
+# Copy to overrides.yaml and keep it in git. Manual decisions here are merged into
+# every report run (Tracker sheet + dossiers), so regenerating never loses them.
+# Keys are "<AZDO project>/<repo>" (case-insensitive).
+repos:
+  "Contoso Retail/legacy-web":
+    wave: 2
+    owner: team-web
+    status: In analysis          # free text: Not started | In analysis | Pipeline built | Parallel run | Cut over
+    archetype: .NET Framework -> IIS (Windows)
+    template: dotnet-framework-iis
+    complexity: High             # override the computed level if needed
+    recommendation: Migrate
+    notes: Needs Windows runner in the DMZ; IIS deploy via WinRM.

@@ -1,0 +1,50 @@
+# Findings catalog: severity (blocker|high|medium|low|info), title and remediation.
+# Severity can be tuned here; the detection logic lives in analyze/findings.py.
+findings:
+  TFVC: {severity: blocker, title: "TFVC version control in use", remediation: "Convert to Git (git-tfs for history or a tip snapshot) before migrating; GitLab only hosts Git."}
+  REPO_SIZE: {severity: high, title: "Repository close to/over the GitLab.com size limit", remediation: "GitLab.com allows 10 GB per project: purge history (git filter-repo), move binaries to LFS or a package registry."}
+  LFS: {severity: low, title: "Git LFS in use", remediation: "Push LFS objects too (git lfs push --all); LFS counts toward GitLab storage."}
+  SUBMODULES: {severity: medium, title: "Git submodules", remediation: "Update submodule URLs to GitLab (relative URLs work best); set GIT_SUBMODULE_STRATEGY."}
+  OPEN_PRS: {severity: low, title: "Open pull requests", remediation: "Merge or close before cutover - PRs do not migrate with a git push."}
+  NO_PIPELINE: {severity: info, title: "Repository has no pipeline", remediation: "Migrate the repository only (or archive it)."}
+  DORMANT: {severity: info, title: "Dormant (no recent commits/runs)", remediation: "Confirm with the owner: migrate as archived or retire."}
+  ORPHAN: {severity: low, title: "Pipeline points to a missing/disabled repository", remediation: "Retire the pipeline unless the repository is restored."}
+  EXTERNAL_REPO: {severity: info, title: "Pipeline builds a non-Azure-Repos repository", remediation: "Plan where this source lives after migration (GitHub/other Git/TFVC)."}
+  WINDOWS_TOOLCHAIN: {severity: high, title: "Windows-only toolchain", remediation: "Needs a Windows runner (self-managed, or GitLab.com Windows runners) with the same SDKs/tools."}
+  UNMAPPED_TASK: {severity: medium, title: "Tasks with no GitLab mapping yet", remediation: "Decide an equivalent and add it to rules/task_mapping.yaml."}
+  UNKNOWN_TASK: {severity: high, title: "Task not found in the server's task catalog", remediation: "Extension uninstalled or task deleted - the pipeline may already be broken."}
+  MARKETPLACE_TASK: {severity: low, title: "Marketplace/extension tasks", remediation: "Replace each with a CLI/image equivalent (see Tasks sheet)."}
+  TASK_GROUP: {severity: low, title: "Classic task groups", remediation: "Task groups are expanded in the report; re-create shared logic as a CI/CD component or include."}
+  DEPLOYMENT_GROUP: {severity: high, title: "Deployment group targets", remediation: "Install self-managed GitLab runners on targets (tagged per environment) or deploy over SSH/WinRM from a runner inside the network."}
+  APPROVALS: {severity: medium, title: "Approvals before/after deployment", remediation: "Protected environments + deployment approval rules (Premium); recreate approver groups in GitLab first."}
+  GATE: {severity: high, title: "Release gates / environment checks", remediation: "No native gates: implement as pre-deploy jobs (curl/scripts), deploy freezes or resource_group locks."}
+  MANUAL_INTERVENTION: {severity: low, title: "Manual intervention / validation steps", remediation: "Use when: manual jobs or deployment approvals."}
+  KEYVAULT: {severity: high, title: "Azure Key Vault-linked variable group", remediation: "secrets:azure_key_vault (Premium) with id_tokens, or fetch with az CLI using OIDC."}
+  SECURE_FILE: {severity: medium, title: "Secure files", remediation: "GitLab Project-level Secure Files or File-type CI/CD variables; obtain the originals from owners."}
+  SECRETS_TO_REENTER: {severity: medium, title: "Secret variables must be re-entered", remediation: "Secret values cannot be exported from AZDO; collect them from owners / the source vault."}
+  INVALID_VAR_NAME: {severity: medium, title: "Variable names invalid as GitLab keys", remediation: "GitLab keys allow only A-Z a-z 0-9 _ - rename (proposed key shown) and update references."}
+  PLAINTEXT_SECRET: {severity: high, title: "Secret-looking value stored as a plain variable", remediation: "Rotate it and store it as a masked (and protected) CI/CD variable or in a vault."}
+  HIDDEN_UI_CONFIG: {severity: high, title: "Settings defined outside the YAML file", remediation: "UI-defined variables/trigger overrides are invisible in the repo - carry them over explicitly."}
+  VSO_LOGGING_CMD: {severity: medium, title: "AZDO logging commands in scripts", remediation: "Replace ##vso[task.setvariable] with dotenv artifacts, build number updates with computed versions, artifact.upload with artifacts:."}
+  ACCESS_TOKEN: {severity: high, title: "System.AccessToken usage", remediation: "Use CI_JOB_TOKEN (allowlisted projects) or a project access token; rewrite AZDO API calls."}
+  PREDEFINED_VARS: {severity: low, title: "AZDO predefined variables in scripts", remediation: "Map to GitLab CI_* variables (see the mapping column)."}
+  AZDO_URL: {severity: medium, title: "Hard-coded Azure DevOps URLs", remediation: "Replace with GitLab URLs / package registry endpoints; remove AZDO API calls."}
+  STATUS_BADGE: {severity: low, title: "AZDO status badges", remediation: "Replace with GitLab pipeline/coverage badges."}
+  FEED_DEPENDENCY: {severity: high, title: "Depends on Azure Artifacts feeds", remediation: "Move packages to GitLab package registry or Artifactory and update config files + credentials."}
+  TEST_FORMAT: {severity: medium, title: "Test results need conversion to JUnit", remediation: "GitLab test reports read JUnit XML: convert TRX/NUnit/xUnit (e.g. trx2junit) or use JUnit loggers."}
+  CONFIG_TRANSFORM: {severity: medium, title: "Config transforms / token replacement", remediation: "Re-implement with envsubst/yq/jq, Helm values or environment-scoped variables."}
+  CROSS_PIPELINE_TRIGGER: {severity: medium, title: "Triggered by other pipelines", remediation: "Direction flips: the upstream GitLab pipeline triggers this one (trigger:project); pipeline subscriptions only fire on tags."}
+  SCHEDULE: {severity: low, title: "Scheduled runs", remediation: "Create GitLab pipeline schedules (UI/API) - they are not part of .gitlab-ci.yml."}
+  CROSS_REPO: {severity: medium, title: "Cross-repository templates or checkouts", remediation: "Move shared templates to a GitLab CI/CD component project; extra checkouts use git clone with CI_JOB_TOKEN."}
+  DYNAMIC_TEMPLATES: {severity: low, title: "Conditional/dynamic template logic", remediation: "Report shows the union of all branches - review the YAML for which paths really run."}
+  UNRESOLVED_TEMPLATE: {severity: medium, title: "Templates that could not be resolved", remediation: "Check repository aliases/refs; the step list for this pipeline is incomplete."}
+  INTERNAL_TARGET: {severity: high, title: "Reaches internal-only hosts (deploy targets / services)", remediation: "GitLab.com hosted runners cannot reach them: use self-managed runners inside the network or the GitLab agent for Kubernetes."}
+  ULTIMATE_ONLY: {severity: medium, title: "Requires a GitLab Ultimate feature", remediation: "Status-check branch policies map to external status checks (Ultimate); on Premium use pipeline jobs instead."}
+  PR_TRIGGER_IGNORED: {severity: info, title: "'pr:' trigger ignored by Azure Repos", remediation: "PR validation comes from branch policies; recreate as merge request pipelines (workflow:rules)."}
+  BRANCH_POLICIES: {severity: low, title: "Branch policies to recreate", remediation: "Protected branches, MR approval rules, 'pipelines must succeed', 'all threads resolved' (see Branch Policies sheet)."}
+  CLONE: {severity: info, title: "Pipeline shares its task sequence with others", remediation: "Good candidate for one shared GitLab template."}
+  SERVICE_HOOKS: {severity: low, title: "Service hooks configured", remediation: "Recreate as GitLab webhooks/integrations (Teams, Slack, Jira, ServiceNow)."}
+  UNUSED_CONNECTION: {severity: info, title: "Service connection not used by any pipeline", remediation: "Do not migrate it."}
+  OAUTH_TOKEN_ACCESS: {severity: low, title: "Jobs allow scripts to access the OAuth token", remediation: "Check scripts for AZDO API calls; use CI_JOB_TOKEN/project tokens in GitLab."}
+  AGENTLESS_JOB: {severity: low, title: "Agentless (server) jobs", remediation: "Manual intervention -> when: manual; delay -> when: delayed; REST calls -> curl jobs."}
+  INVENTORY_ONLY: {severity: info, title: "Only inventory-level data", remediation: "Run `azdo-analyzer analyze --project` for full step-level analysis."}

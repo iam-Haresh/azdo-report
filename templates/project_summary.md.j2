@@ -1,0 +1,54 @@
+# {{ project.name }} — project migration summary
+
+Generated {{ generated }} · data as of {{ fetched_at }} ({{ mode }}) · GitLab target: GitLab.com {{ tier }}
+
+| Repos | Active | Dormant | Dead/never | Disabled | YAML pipelines | Classic builds | Classic releases | Low | Medium | High | Blockers |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| {{ project.repos|length }} | {{ statuses.Active }} | {{ statuses.Dormant }} | {{ statuses.Dead + statuses.Never }} | {{ statuses.Disabled }} | {{ kinds.yaml }} | {{ kinds.classic_build }} | {{ kinds.classic_release }} | {{ levels.Low }} | {{ levels.Medium }} | {{ levels.High }} | {{ blockers }} |
+{% if project.tfvc %}
+
+> ⚠ **TFVC is in use in this project** — convert to Git before migrating.
+{% endif %}
+
+## Wave readiness (suggested order: Low → Medium → High, active first)
+
+| Repo | Archetype | Pipelines | Complexity | Score | Activity | Recommendation | Blocker/high findings |
+|---|---|---|---|---|---|---|---|
+{% for r in ordered %}| {{ r.name|cell }} | {{ r.archetype|cell }} | {{ (r.pipelines|length) + (r.releases|length) }} | {{ r.complexity }}{% if r.score.blocker %} ⛔{% endif %} | {{ r.score.points }} | {{ r.status }} | {{ r.recommendation }} | {{ r.serious|cell }} |
+{% endfor %}
+
+## Archetypes in this project
+
+| Archetype key | Named archetype | Repos |
+|---|---|---|
+{% for a in archetypes %}| `{{ a.key }}` | {{ a.name|cell }} | {{ a.count }} |
+{% endfor %}
+
+## Shared resources (decide GitLab group vs project level)
+
+| Kind | Name | Used by pipelines | Proposed level |
+|---|---|---|---|
+{% for s in shared %}| {{ s.kind }} | {{ s.name|cell }} | {{ s.users|cell }} | {{ s.level|cell }} |
+{% endfor %}
+{% if not shared %}| — | — | — | — |
+{% endif %}
+
+## Retire / archive candidates
+
+{% for r in retire %}- {{ r.name }} — {{ r.status }}{% if r.activity.last_commit_any %}, last commit {{ r.activity.last_commit_any|d }}{% endif %}
+
+{% else %}_None._
+{% endfor %}
+
+## Top findings
+
+| Severity | Finding | Count | Example |
+|---|---|---|---|
+{% for f in top_findings %}| {{ f.severity }} | {{ f.id }} — {{ f.title|cell }} | {{ f.count }} | {{ f.example|cell }} |
+{% endfor %}
+
+## Dependency graph
+
+```mermaid
+{{ mermaid }}
+```
