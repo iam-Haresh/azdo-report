@@ -24,8 +24,8 @@ class AzdoSettings:
     api_version: str = "7.0"
     pat_env: str = "AZDO_PAT"
     keychain_service: str | None = None
-    ca_bundle: str | None = None
-    verify_tls: bool = True
+    ca_bundle: str | None = None  # only used when verify_tls is true
+    verify_tls: bool = False  # off by default: run from a laptop against a server with an internal CA
     timeout_seconds: float = 60.0
     concurrency: int = 6
     max_retries: int = 5

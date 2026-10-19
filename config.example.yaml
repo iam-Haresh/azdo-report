@@ -6,8 +6,8 @@ azdo:
   api_version: "7.0"            # run `azdo-analyzer doctor` - it prints the newest version your server accepts
   pat_env: AZDO_PAT             # environment variable holding the read-only PAT
   keychain_service: null        # optional: macOS Keychain generic-password service name holding the PAT
-  ca_bundle: null               # path to your corporate CA bundle (PEM) if the server uses an internal CA
-  verify_tls: true
+  verify_tls: false             # TLS certificate verification is OFF for API calls and git (laptop use)
+  ca_bundle: null               # to verify instead: set verify_tls: true and point this at your corporate CA (PEM)
   timeout_seconds: 60
   concurrency: 6                # parallel API calls - keep modest for an on-prem server
   max_retries: 5

@@ -17,7 +17,7 @@ It never writes to Azure DevOps or GitLab, and it does not generate `.gitlab-ci.
 cd ~/claude_workspace/azdo-analysis
 /opt/homebrew/bin/python3.12 -m venv .venv          # system python3 is 3.9 - use 3.12
 .venv/bin/pip install -e '.[dev]'
-cp config.example.yaml config.yaml                  # set azdo.collection_url (+ ca_bundle if your server uses an internal CA)
+cp config.example.yaml config.yaml                  # set azdo.collection_url (TLS verification is off by default)
 export AZDO_PAT='<read-only PAT>'                   # never put the PAT in config.yaml
 .venv/bin/azdo-analyzer doctor                      # connectivity, API version, PAT coverage, git access
 ```
@@ -98,6 +98,7 @@ All judgement lives in editable YAML under `rules/`:
 ## Security notes
 
 - The client refuses anything but GET, both in code and in an httpx request hook.
+- TLS certificate verification is **off by default** (`azdo.verify_tls: false`) for API calls and git. To verify against your corporate CA instead, set `verify_tls: true` and `ca_bundle: /path/to/ca.pem`.
 - The PAT is redacted from logs and errors. Git receives it through `GIT_CONFIG_*` environment variables, never in a URL, `.git/config` or the process list.
 - `out/` is git-ignored. It holds API responses, which include **non-secret** variable values, and shallow clones. Set `analysis.redact_values: true` to keep plain values out of the reports.
 
@@ -106,7 +107,7 @@ All judgement lives in editable YAML under `rules/`:
 | Symptom | Fix |
 |---|---|
 | `Received an HTML page instead of JSON` / 401 | PAT invalid or expired, or the collection URL is wrong |
-| TLS / certificate errors | set `azdo.ca_bundle` to your corporate CA PEM |
+| TLS / certificate errors (only with `verify_tls: true`) | set `azdo.ca_bundle` to your corporate CA PEM |
 | `out of range` API version | run `doctor` and set `azdo.api_version` to the version it prints |
 | FORBIDDEN rows in Coverage | a scope or permission is missing; the rest of the analysis still runs |
 | Server under load | lower `azdo.concurrency`; reruns use the cache unless `--refresh` |

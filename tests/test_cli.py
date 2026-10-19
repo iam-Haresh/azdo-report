@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from azdo_analyzer.cli import app
-from azdo_analyzer.config import PROJECT_ROOT, ConfigError, load_config
+from azdo_analyzer.config import PROJECT_ROOT, Config, ConfigError, load_config
 from tests.fixtures.sample_data import COLLECTION, PROJECT, build_sample
 
 runner = CliRunner()
@@ -56,3 +56,27 @@ def test_missing_pat_is_reported(tmp_path, monkeypatch):
     monkeypatch.delenv("AZDO_PAT", raising=False)
     result = runner.invoke(app, ["analyze", "-p", PROJECT, "--config", str(_config(tmp_path))])
     assert result.exit_code == 2 and "No PAT found" in result.output
+
+
+def test_tls_verification_is_off_for_api_and_git(monkeypatch):
+    import warnings
+
+    import certifi
+
+    from azdo_analyzer import cli
+    from azdo_analyzer.client import AzdoClient
+    from azdo_analyzer.collect.content import git_env
+
+    for cfg in (Config(), load_config(PROJECT_ROOT / "config.example.yaml")):
+        assert cfg.tls_verify is False
+        env = git_env("pat", cfg)
+        assert (env["GIT_CONFIG_KEY_1"], env["GIT_CONFIG_VALUE_1"]) == ("http.sslVerify", "false")
+        captured = {}
+        monkeypatch.setattr(cli, "AzdoClient", lambda *a, _seen=captured, **kw: _seen.update(kw))
+        cfg.azdo.collection_url = COLLECTION
+        cli._client(cfg, "pat")
+        assert captured["verify"] is False
+    # opting back in with a CA bundle builds an SSL context (no httpx deprecation warning)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        AzdoClient(COLLECTION, "pat", verify=certifi.where()).close()

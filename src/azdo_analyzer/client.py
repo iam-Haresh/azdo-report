@@ -12,6 +12,7 @@ import base64
 import logging
 import random
 import re
+import ssl
 import threading
 import time
 from collections import Counter
@@ -92,7 +93,7 @@ class AzdoClient:
         pat: str,
         *,
         api_version: str = "7.0",
-        verify: bool | str = True,
+        verify: bool | str = False,
         timeout: float = 60.0,
         max_retries: int = 5,
         concurrency: int = 6,
@@ -110,6 +111,8 @@ class AzdoClient:
         self._preview_routes: dict[str, str] = {}
         self._lock = threading.Lock()
         self.stats: Counter[str] = Counter()
+        if isinstance(verify, str):  # CA bundle path -> SSL context (httpx deprecates verify=<str>)
+            verify = ssl.create_default_context(cafile=verify)
         self._http = httpx.Client(
             headers={
                 "Authorization": f"Basic {token}",
