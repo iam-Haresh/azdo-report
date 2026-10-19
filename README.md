@@ -72,7 +72,7 @@ For what every sheet, column and report section means and how it is derived, see
   - Tasks (with their GitLab mapping)
   - Variables, Variable Groups, Service Connections, Secure Files
   - Agents & Pools, Environments & Deploy Groups, Branch Policies
-  - Dependencies, Findings, Archetypes (+ pipeline clones)
+  - Dependencies, Findings, Archetypes (combinations, components, pipeline clones)
   - Coverage
 - `dossiers/<project>/<repo>.md` is the checklist for that repo:
   - `[x]` marks items filled from AZDO; `[ ]` marks manual items
@@ -81,6 +81,49 @@ For what every sheet, column and report section means and how it is derived, see
 - `diff-<label>.md`: pipelines and repos added, removed or changed since the last run.
 
 Manual decisions go in `overrides.yaml` (see `overrides.example.yaml`; keep it in git). They are merged into every run, so regenerating the reports never loses them.
+
+## What it identifies
+
+The counts come from the rule files in `rules/`, so they grow as you add rules; a test keeps the numbers below in sync with them. The full lists, with how each pattern is detected, are in [archetype values](docs/reports/archetype-values.md), [pipelines](docs/reports/workbook/pipelines.md#what-the-tool-identifies-in-pipelines-and-releases) and [releases](docs/reports/workbook/releases.md#what-the-tool-identifies-in-classic-releases).
+
+### Repo archetypes
+
+Found mostly from the repo's files. A repo can match several patterns in each dimension, for example the stack `dotnet, angular`.
+
+| Dimension | Count | Patterns |
+|---|---|---|
+| Stacks | 67 | **.NET (7):** .NET Framework, .NET, WPF/WinForms, UWP/WinUI, Xamarin, MAUI, .NET with unknown version · **JVM (4):** Maven, Gradle, Ant, sbt · **Other back-end (9):** Python, Go, Rust, PHP, Ruby, C/C++, C/C++ with CMake, C/C++ Visual Studio, R · **Web (11):** Angular, AngularJS, React, Next.js, Gatsby, Vue, Nuxt, Svelte, Electron, SharePoint SPFx, Node.js · **Mobile (5):** React Native, Ionic/Capacitor/Cordova, Android, iOS, Flutter · **Data & BI (8):** database projects, SSIS, SSRS, SSAS, Power BI, Data Factory, Databricks, dbt · **Business & legacy (5):** Power Platform, Salesforce, BizTalk, Delphi, VB6 · **IaC & ops (12):** Terraform, Bicep, ARM, CloudFormation, AWS CDK, Pulumi, Ansible, Chef, Puppet, Packer, PowerShell modules, documentation sites · **Other (6):** AZDO YAML template repos; Helm charts, manifests, Dockerfile, SQL scripts or scripts only |
+| Markers | 26 | **Containers & Kubernetes (6):** Dockerfile, Compose, Helm chart, Kustomize, Kubernetes manifests, OpenShift objects · **Serverless (3):** Azure Functions, Serverless Framework, AWS SAM · **Frameworks & project types (12):** ASP.NET web, .NET worker, Spring Boot, Quarkus, WAR/EAR, Django, Flask, FastAPI, Express, NestJS, JavaScript monorepo, environment config files · **Other CI & tooling (5):** Jenkinsfile, existing `.gitlab-ci.yml`, GitHub Actions, other CI, dev containers |
+| Also from files | 41 | **Build tools (23):** from lock files and wrappers, such as npm, Yarn, Maven wrapper, Poetry, Cargo · **Test & scan tools (15):** from config files, such as Karma, Jest, Cypress, Playwright, pytest, SonarQube · **Artifacts (3):** container image, installer, DACPAC |
+
+Each repo is also checked for 15 kinds of findings, such as size against the GitLab limit, LFS, submodules, Azure Artifacts feeds, hard-coded AZDO URLs, `##vso` commands and branch policies.
+
+### Pipeline patterns
+
+Build and YAML pipelines, from their tasks, task inputs, script commands, service connections and job types.
+
+| Pattern | Count | Patterns |
+|---|---|---|
+| Build tools | 50 | **JVM (4):** Maven, Gradle, Ant, sbt · **.NET (8):** MSBuild, dotnet, NuGet, Cake, NUKE, psake, devenv, SSIS build · **JavaScript (7):** npm, Yarn, pnpm, Angular CLI, Bower, Grunt, Gulp · **Python (5):** pip, Poetry, Pipenv, Conda, uv · **Other languages (7):** Go, Cargo, Composer, Bundler, CMake, Make, Bazel · **Mobile (4):** Xcode, fastlane, CocoaPods, Flutter · **Containers & images (8):** Docker, Buildah, Podman, Kaniko, Jib, OpenShift S2I, Buildpacks, Packer · **Infrastructure (2):** Terraform, Helm · **Docs (5):** MkDocs, DocFX, Sphinx, Hugo, Jekyll |
+| Test & scan tools | 37 | **Scanners (21):** SonarQube, SonarCloud, Checkmarx, Fortify, Veracode, Mend, Snyk, Black Duck, Coverity, OWASP Dependency-Check, Trivy, Anchore, Aqua, Prisma Cloud, JFrog Xray, Microsoft Security, CodeQL, secret scanning, IaC scanning, OWASP ZAP, code coverage · **Tests (16):** VSTest, dotnet test, Azure Test Plans, Karma, Jest, Vitest, Mocha, Cypress, Playwright, Protractor, pytest, Newman, JMeter, k6, Gatling, App Center Test |
+| Deploy targets | 56 | **Containers (4):** Kubernetes, OpenShift, GitOps (Argo CD, Flux), Docker host · **Servers (12):** IIS, Windows service, WinRM, deployment groups, SSH, file share, FTP, Tomcat, JBoss/WildFly, WebLogic, WebSphere, Service Fabric · **Data & business apps (7):** databases, SSIS catalog, SSRS, Power BI, Power Platform, Salesforce, Databricks · **Azure (10):** App Service, Functions, Container Apps, Static Web Apps, Storage, ARM/Bicep, VMs, Cloud Services, Spring Apps, Azure CLI · **AWS & other clouds (9):** S3, Lambda, ECS, CloudFormation, CodeDeploy, Elastic Beanstalk, AWS CLI, Google Cloud, Cloud Foundry · **IaC & configuration (5):** Terraform, Pulumi, Ansible, Chef, Puppet · **Release tools (4):** Octopus Deploy, UrbanCode, XL Deploy, Jenkins · **App stores (5):** App Center, App Store, Google Play, Firebase, Microsoft Store |
+| Artifacts | 15 | container image, Helm chart, Maven, NuGet, npm, Python and universal packages, generic uploads, Chocolatey package, debug symbols, mobile apps, installers, DACPAC, VM images, build artifacts |
+| Findings | 32 | **Tasks (6):** unmapped, unknown, marketplace, task groups, Windows-only, test results needing JUnit conversion · **Secrets & variables (6):** Key Vault groups, secure files, secrets to re-enter, invalid names, plain-text secrets, OAuth token access · **AZDO-specific scripts (4):** `##vso` commands, `System.AccessToken`, predefined variables, AZDO URLs · **Structure (9):** settings outside the YAML, dynamic templates, unresolved templates, cross-repo templates, cross-pipeline triggers, schedules, ignored `pr:` trigger, orphan pipelines, external repos · **Deployment (7):** approvals, gates, manual interventions, agentless jobs, deployment groups, internal-only targets, config transforms |
+| Trigger types | 7 | CI, PR, schedule, pipeline resource, build completion, gated check-in, webhook |
+
+The tool also maps 115 tasks to a GitLab approach and 74 Azure DevOps variables to GitLab `CI_*` variables, and scores complexity with 21 factors.
+
+### Release patterns
+
+Classic releases, from every stage's tasks, scripts and settings.
+
+| Pattern | Count | Patterns |
+|---|---|---|
+| Technology patterns and findings | 158 + 32 | the same as for pipelines, matched in release tasks and scripts; the deploy targets matter most |
+| Trigger types | 6 | artifact (continuous deployment), schedule, pull request, container image, package, source repo |
+| Stage settings | — | conditions, pre/post-deployment approvals, gates, deployment-group and agentless jobs, queue policy, stage variables, schedules; plus artifact sources, process parameters and retention |
+
+Deployment history is read per stage: deployments, last deployment and success rate.
 
 ## How it works
 

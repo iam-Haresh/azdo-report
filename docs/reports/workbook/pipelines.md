@@ -5,6 +5,7 @@
 **One row per:** build pipeline, YAML or classic. Classic releases are on the [Releases sheet](releases.md).
 **Use it to:** see what each pipeline does, how often it runs, and how hard it is to rebuild in GitLab.
 **Data:** `build/definitions` (list, plus the full definition in deep mode), `build/builds` (run history), the YAML file and its templates (deep), and the timeline of the last good run (deep).
+**What the tool identifies:** 158 technology patterns, 32 kinds of findings, 13 trigger types and more; see [What the tool identifies in pipelines and releases](#what-the-tool-identifies-in-pipelines-and-releases).
 
 | Column | What it shows | Derived from |
 |---|---|---|
@@ -62,3 +63,38 @@ Each trigger is shown as `<kind> [(UI override)] [from <source>] [branches …] 
 
 - **YAML pipelines in inventory mode** show only settings made in the UI. Steps, tasks, templates and groups appear after a deep `analyze`.
 - **YAML conditional logic** (`${{ if }}`): every branch is included, so Steps and the task columns can be a superset of what really runs. The repo's [dossier](../repo-dossier.md) shows "Last good run vs static analysis" for each pipeline, comparing these with the tasks that ran.
+
+## What the tool identifies in pipelines and releases
+
+The tool recognises 158 technology patterns and 32 kinds of findings in build/YAML pipelines and classic releases, and reads every trigger, stage, approval and gate. The counts come from the rule files in `rules/`, so they grow as you add rules.
+
+| What it identifies | Count | Examples | Full list |
+|---|---|---|---|
+| Build tools | 50 | Maven, Gradle, MSBuild, dotnet, npm, Docker, Kaniko, Jib, OpenShift S2I | [Archetype values](../archetype-values.md#build-tools) |
+| Test & scan tools | 37 | SonarQube, Checkmarx, Fortify, Snyk, Trivy, VSTest, Karma, Cypress | [Archetype values](../archetype-values.md#test--scan-tools) |
+| Deploy targets | 56 | Kubernetes, OpenShift, IIS, Windows services, deployment groups, file shares, Tomcat/JBoss/WebLogic, Azure, AWS, Octopus, databases | [Archetype values](../archetype-values.md#deploy-targets) |
+| Artifacts | 15 | container image, Helm chart, Maven/NuGet/npm/Python packages, installers, DACPAC | [Archetype values](../archetype-values.md#artifacts) |
+| Findings | 32 | Key Vault groups, approvals, gates, `##vso` commands, `System.AccessToken`, TRX results needing JUnit conversion, config transforms, unmapped tasks | [Findings](findings.md) |
+| Tasks mapped to a GitLab approach | 115 | each with an image hint and effort level; other tasks are listed by usage | [Tasks](tasks.md), `rules/task_mapping.yaml` |
+| Complexity factors | 21 | plus a starting score per pipeline type | [Complexity score](../concepts.md#complexity-score) |
+| Trigger types | 13 | 7 for build pipelines ([trigger format](#trigger-format)), 6 for classic releases ([Releases](releases.md#what-the-tool-identifies-in-classic-releases)) | |
+| Azure DevOps variables mapped to GitLab `CI_*` variables | 74 | 71 variables plus 3 prefix families such as `Release.Artifacts.*`; e.g. `$(Build.SourcesDirectory)` → `CI_PROJECT_DIR` | `rules/predefined_vars.yaml` |
+
+The build tools, test & scan tools, deploy targets and artifacts are matched through 209 task names, 379 script commands (such as `kubectl apply` or `./mvnw deploy`), 31 script regexes and 9 service-connection types. They describe the repos that the pipelines build, on the [Repos](repos.md) and [Archetypes](archetypes.md) sheets.
+
+**What it reads from each definition (deep `analyze`):**
+- **YAML pipelines:**
+  - templates, including ones in other repos at the pinned version, and `extends`
+  - parameters, `${{ if }}` and `${{ each }}`, and resources (repositories, pipelines, containers, webhooks)
+  - deployment strategies (runOnce, rolling, canary, with their lifecycle hooks) and matrix or parallel jobs
+  - container and service jobs, checkout options, conditions, `dependsOn`, timeouts and retries
+  - variables and trigger overrides set in the UI, plus a check against the tasks of the last successful run
+  - checks on the environments that deployment jobs use: approvals, exclusive lock and required template; any other check (business hours, branch control, …) is recorded by name
+- **Classic builds:** task groups (expanded recursively, at the version used), secret and queue-time variables, demands, repository options (submodules, LFS, clean, fetch depth), multi-configuration and multi-agent jobs, build number format, job authorization scope and timeout, OAuth token access, retention.
+- **Run history:** success rate, typical (p50) and slowest (p95) run time, queue time, trigger reasons, branches built, and peak concurrency per agent pool ([Agents & Pools](agents-and-pools.md)). Pipelines that are identical or at least 80% similar are grouped on the [Archetypes sheet](archetypes.md).
+
+**Limits:**
+- **Full detail needs `analyze`.** An `inventory` run reads the definition list and run history only, not the steps.
+- **Runtime values aren't evaluated.** The tool can't evaluate `$[ ]` runtime expressions or variables that scripts set while running. Every `${{ if }}` branch is kept and flagged, because it can't tell which one runs.
+- **Scripts are matched by command and regex, not understood.** A repo script is searched only when a pipeline calls it by name.
+- **Unknown tasks aren't lost.** They are listed on the [Tasks sheet](tasks.md) with their usage, but don't count towards archetypes until you add them to `rules/archetypes.yaml`.
