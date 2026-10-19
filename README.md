@@ -9,7 +9,7 @@ It pulls repos, YAML and classic build pipelines, classic releases, variables, c
 - a summary per project
 - a drift report since the previous run
 
-It never writes to Azure DevOps or GitLab, and it does not generate `.gitlab-ci.yml` files.
+It **cannot** write to Azure DevOps (see [Read-only guarantees](#read-only-guarantees)), never touches GitLab, and does not generate `.gitlab-ci.yml` files.
 
 ## Setup
 
@@ -95,11 +95,30 @@ All judgement lives in editable YAML under `rules/`:
 | `scan_patterns.yaml` | content-scan regexes |
 | `predefined_vars.yaml` | AZDO → `CI_*` variable mapping |
 
-## Security notes
+## Read-only guarantees
 
-- The client refuses anything but GET, both in code and in an httpx request hook.
+The tool cannot change anything in Azure DevOps. Each layer below is enforced in code and covered by `tests/test_read_only.py`.
+
+1. **Your PAT is the outer boundary.** Give it Read scopes only, from an account in the Readers groups. Azure DevOps itself then refuses any write, whatever the tool does.
+2. **REST calls** (`client.py`) are checked before anything is sent. The check runs twice: in the client and again in an httpx request hook, so even direct use of the underlying HTTP client can't get past it. A call is allowed only if it is:
+   - a **GET** (POST, PUT, PATCH, DELETE and every other verb are refused),
+   - to **your collection host only**,
+   - to one of the **read endpoints listed in `READ_ENDPOINTS`** (about 25 routes, short enough to review). Any other route, even another GET, is refused.
+   - Redirects are never followed.
+3. **git** (`collect/content.py`):
+   - Only `git clone` (depth 1) and `git ls-remote` can be run. Any other subcommand, including `push`, `fetch`, `commit` and `config`, is refused.
+   - `--refresh` deletes the cached clone and clones again; it never fetches or resets.
+   - Every clone gets an unreachable push URL (`read-only://...`), so even a manual `git push` from `out/repos/` fails.
+   - Saved git credentials are switched off (`credential.helper` reset), so only the read-only PAT is ever used.
+   - The server's clone URL is passed after `--`, so it can never be read as a git option.
+4. **No other network or command-line access.** A test fails if any module other than `client.py` imports an HTTP library, or if any module other than the git wrapper and the macOS Keychain lookup runs a command.
+5. **Local writes stay under `out/`**: cache, clones, model, reports, logs. `overrides.yaml` is only read.
+
+`doctor` prints these safeguards at the end of its output.
+
+Other notes:
 - TLS certificate verification is **off by default** (`azdo.verify_tls: false`) for API calls and git. To verify against your corporate CA instead, set `verify_tls: true` and `ca_bundle: /path/to/ca.pem`.
-- The PAT is redacted from logs and errors. Git receives it through `GIT_CONFIG_*` environment variables, never in a URL, `.git/config` or the process list.
+- The PAT is redacted from logs and errors. git receives it through `GIT_CONFIG_*` environment variables, never in a URL, `.git/config` or the process list.
 - `out/` is git-ignored. It holds API responses, which include **non-secret** variable values, and shallow clones. Set `analysis.redact_values: true` to keep plain values out of the reports.
 
 ## Troubleshooting

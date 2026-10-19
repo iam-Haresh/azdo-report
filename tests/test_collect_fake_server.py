@@ -216,6 +216,7 @@ def test_doctor_command(tmp_path: Path, monkeypatch):
     from typer.testing import CliRunner
 
     from azdo_analyzer import cli
+    from azdo_analyzer.collect import content
 
     server = FakeServer()
     cfg_file = tmp_path / "config.yaml"
@@ -227,7 +228,7 @@ def test_doctor_command(tmp_path: Path, monkeypatch):
         calls.append((cmd, kwargs.get("env", {})))
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(content.subprocess, "run", fake_run)
     with respx.mock(assert_all_called=False) as mock:
         mock.route(host="azdo.contoso.local").mock(side_effect=server)
         result = CliRunner().invoke(cli.app, ["doctor", "--config", str(cfg_file)])
@@ -236,8 +237,9 @@ def test_doctor_command(tmp_path: Path, monkeypatch):
     assert "no TFVC repository" in result.output and "TFVC: no" in result.output
     assert {r.method for r in server.requests} == {"GET"}
     cmd, env = calls[0]
-    assert cmd[1] == "ls-remote" and "fake-pat" not in " ".join(cmd)  # PAT only travels in GIT_CONFIG_* env vars
+    assert cmd[1:4] == ["ls-remote", "--heads", "--"] and "fake-pat" not in " ".join(cmd)  # PAT only in GIT_CONFIG_* env
     assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
+    assert "Read-only safeguards" in result.output
 
 
 def test_cli_analyze_online_without_clones(tmp_path: Path, monkeypatch):

@@ -70,7 +70,8 @@ def test_tls_verification_is_off_for_api_and_git(monkeypatch):
     for cfg in (Config(), load_config(PROJECT_ROOT / "config.example.yaml")):
         assert cfg.tls_verify is False
         env = git_env("pat", cfg)
-        assert (env["GIT_CONFIG_KEY_1"], env["GIT_CONFIG_VALUE_1"]) == ("http.sslVerify", "false")
+        settings = {env[f"GIT_CONFIG_KEY_{i}"]: env[f"GIT_CONFIG_VALUE_{i}"] for i in range(int(env["GIT_CONFIG_COUNT"]))}
+        assert settings["http.sslVerify"] == "false"
         captured = {}
         monkeypatch.setattr(cli, "AzdoClient", lambda *a, _seen=captured, **kw: _seen.update(kw))
         cfg.azdo.collection_url = COLLECTION

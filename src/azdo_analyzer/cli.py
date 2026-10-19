@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +16,7 @@ from azdo_analyzer.analyze import run_analysis
 from azdo_analyzer.cache import RawStore
 from azdo_analyzer.client import AzdoClient, AzdoHttpError, RedactingFilter
 from azdo_analyzer.collect import CollectContext, Coverage, collect_all
-from azdo_analyzer.collect.content import FileProvider, git_env
+from azdo_analyzer.collect.content import GIT_READ_COMMANDS, FileProvider, run_git
 from azdo_analyzer.collect.repos import tfvc_capability, tfvc_probe_params
 from azdo_analyzer.config import Config, ConfigError, get_pat, load_config
 from azdo_analyzer.report import write_reports
@@ -155,15 +154,10 @@ def doctor(config: Optional[Path] = ConfigOpt) -> None:
     repos = client.get_list("git/repositories", project=project)
     repo = next((r for r in repos if r.get("remoteUrl") and not r.get("isDisabled")), None)
     if repo:
-        env = git_env(pat, cfg)
-        try:
-            proc = subprocess.run([cfg.collection.clone.git_binary, "ls-remote", "--heads", repo["remoteUrl"]], env=env,
-                                  capture_output=True, text=True, timeout=120, check=False)
-            ok = proc.returncode == 0
-            detail = "" if ok else client.redact(proc.stderr.strip())[-200:]
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            ok, detail = False, str(exc)
-        console.print(f"git ls-remote {repo['name']}: " + ("[green]OK[/green]" if ok else f"[red]failed[/red] {detail}"))
+        ok, detail = run_git(cfg, pat, "ls-remote", "--heads", "--", repo["remoteUrl"], timeout=120)
+        console.print(f"git ls-remote {repo['name']}: " + ("[green]OK[/green]" if ok else f"[red]failed[/red] {detail[-200:]}"))
+    console.print(f"Read-only safeguards: REST = GET to allowlisted read endpoints on {client.host} only; "
+                  f"git = {' / '.join(sorted(GIT_READ_COMMANDS))} only, pushes disabled, saved credentials ignored.")
     console.print("Tip: set azdo.api_version in config.yaml to the version shown above.")
 
 

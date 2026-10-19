@@ -1,7 +1,11 @@
 """Repository content: shallow clones, tree listings and template file fetches.
 
-The PAT reaches git only through GIT_CONFIG_* environment variables, so it never
-appears in a clone URL, in .git/config or in the process list.
+git is read-only by construction:
+* only ``git clone`` and ``git ls-remote`` can be run (``git_command`` refuses anything else),
+* every clone gets an unreachable push URL, so a push from it can never reach the server,
+* saved git credentials are ignored (``credential.helper`` reset) - only the read-only PAT is used,
+* the PAT reaches git only through GIT_CONFIG_* environment variables, never in a clone URL,
+  .git/config or the process list.
 """
 
 from __future__ import annotations
@@ -15,17 +19,24 @@ from typing import Any, Iterator
 from urllib.parse import urlsplit, urlunsplit
 
 from azdo_analyzer.cache import RawStore, safe_name
-from azdo_analyzer.client import AzdoClient, AzdoHttpError, Redactor
+from azdo_analyzer.client import AzdoClient, AzdoHttpError, ReadOnlyViolation, Redactor
 from azdo_analyzer.collect.base import CollectContext
 from azdo_analyzer.config import Config
 from azdo_analyzer.util import branch_name
 
+GIT_READ_COMMANDS = frozenset({"clone", "ls-remote"})
+PUSH_DISABLED_URL = "read-only://pushing-is-disabled-by-azdo-analyzer"
+_REMOTE_SCHEMES = ("https", "http", "file")
 SKIP_DIRS = {".git", "node_modules", "bin", "obj", "packages", "vendor", "dist", "target", ".gradle", ".idea", ".vs", "__pycache__", ".venv"}
 
 
 def git_env(pat: str, cfg: Config) -> dict[str, str]:
     token = base64.b64encode(f":{pat}".encode("utf-8")).decode("ascii")
-    entries = [("http.extraHeader", f"Authorization: Basic {token}")]
+    entries = [
+        ("http.extraHeader", f"Authorization: Basic {token}"),
+        ("credential.helper", ""),  # ignore saved credentials: only the read-only PAT is ever used
+        ("remote.origin.pushurl", PUSH_DISABLED_URL),  # a push from this process could never reach the server
+    ]
     verify = cfg.tls_verify
     if verify is False:
         entries.append(("http.sslVerify", "false"))
@@ -38,6 +49,33 @@ def git_env(pat: str, cfg: Config) -> dict[str, str]:
         env[f"GIT_CONFIG_VALUE_{i}"] = value
     env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1", "GCM_INTERACTIVE": "never"})
     return env
+
+
+def git_command(git: str, subcommand: str, *args: str) -> list[str]:
+    """Build a git command line. Only read-only subcommands can be built."""
+    if subcommand not in GIT_READ_COMMANDS:
+        raise ReadOnlyViolation(f"git {subcommand} is not allowed: azdo-analyzer only runs {', '.join(sorted(GIT_READ_COMMANDS))}")
+    return [git, subcommand, *args]
+
+
+def run_git(cfg: Config, pat: str, subcommand: str, *args: str, timeout: int = 1800) -> tuple[bool, str]:
+    """Run a read-only git command with the PAT injected via environment; returns (ok, redacted stderr)."""
+    cmd = git_command(cfg.collection.clone.git_binary, subcommand, *args)
+    redact = Redactor([pat, base64.b64encode(f":{pat}".encode("utf-8")).decode("ascii")])
+    try:
+        result = subprocess.run(cmd, env=git_env(pat, cfg), capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, redact(str(exc))
+    return result.returncode == 0, redact(result.stderr.strip())[-400:]
+
+
+def _remove_clone(cfg: Config, path: Path) -> None:
+    """Delete one cached clone - refuses anything outside out/repos."""
+    root = cfg.repos_dir.resolve()
+    target = path.resolve()
+    if target == root or root not in target.parents:
+        raise RuntimeError(f"Refusing to delete {target}: it is not inside {root}")
+    shutil.rmtree(target, ignore_errors=True)
 
 
 def _strip_userinfo(url: str) -> str:
@@ -56,17 +94,7 @@ def clone_repos(ctx: CollectContext, project: dict, repos: list[dict], pat: str)
     """Shallow-clone each repo's default branch; very large repos get a tree listing instead."""
     p = project["name"]
     settings = ctx.cfg.collection.clone
-    env = git_env(pat, ctx.cfg)
-    redact = Redactor([pat, base64.b64encode(f":{pat}".encode()).decode()])
-    git = settings.git_binary
     c = ctx.client
-
-    def run(cmd: list[str]) -> tuple[bool, str]:
-        try:
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return False, redact(str(exc))
-        return result.returncode == 0, redact(result.stderr.strip())[-400:]
 
     def one(repo: dict) -> tuple[str, str]:
         rid, name = repo["id"], repo["name"]
@@ -93,27 +121,22 @@ def clone_repos(ctx: CollectContext, project: dict, repos: list[dict], pat: str)
             )
             return rid, "tree-only"
         dest = repo_dir(ctx.cfg, p, name)
-        if (dest / ".git").exists():
-            if not ctx.refresh:
-                return rid, "cached"
-            steps = [
-                [git, "-C", str(dest), "fetch", "--depth", "1", "--no-tags", "origin", branch],
-                [git, "-C", str(dest), "reset", "--hard", "-q", "FETCH_HEAD"],
-                [git, "-C", str(dest), "clean", "-fdq"],
-            ]
-        else:
+        if (dest / ".git").exists() and not ctx.refresh:
+            return rid, "cached"
+        url = _strip_userinfo(repo.get("remoteUrl") or "")
+        if urlsplit(url).scheme not in _REMOTE_SCHEMES:
+            ctx.coverage.record(p, "content", "git clone", "ERROR", message=f"{name}: unexpected remote URL {url!r}")
+            return rid, "error"
+        if dest.exists():  # --refresh re-clones (keeps git to clone/ls-remote only)
+            _remove_clone(ctx.cfg, dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        ok, err = run_git(ctx.cfg, pat, "clone", "--quiet", "--depth", "1", "--single-branch", "--no-tags", "--branch", branch,
+                          "--config", f"remote.origin.pushurl={PUSH_DISABLED_URL}", "--", url, str(dest))
+        if not ok:
             if dest.exists():
-                shutil.rmtree(dest)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            url = _strip_userinfo(repo.get("remoteUrl") or "")
-            steps = [[git, "clone", "--quiet", "--depth", "1", "--single-branch", "--no-tags", "--branch", branch, url, str(dest)]]
-        for cmd in steps:
-            ok, err = run(cmd)
-            if not ok:
-                if not (dest / ".git").exists() and dest.exists():
-                    shutil.rmtree(dest, ignore_errors=True)
-                ctx.coverage.record(p, "content", "git clone", "ERROR", message=f"{name}: {err}")
-                return rid, "error"
+                _remove_clone(ctx.cfg, dest)
+            ctx.coverage.record(p, "content", "git clone", "ERROR", message=f"{name}: {err}")
+            return rid, "error"
         ctx.coverage.record(p, "content", "git clone", "OK", 1)
         return rid, "cloned"
 

@@ -1,9 +1,12 @@
 """Read-only REST client for Azure DevOps Server / Services.
 
-Safety properties:
-* Only GET requests can be sent (checked in ``request`` and again in an httpx
-  request hook), so the tool cannot modify anything even if the PAT is broader.
-* The PAT and its Base64 form are redacted from every log line and exception.
+Safety properties (enforced in ``request`` and again in an httpx request hook, so
+nothing can bypass them - not even direct use of the underlying httpx client):
+* only GET requests,
+* only to the configured collection host,
+* only to the read endpoints listed in ``READ_ENDPOINTS``,
+* redirects are never followed.
+The PAT and its Base64 form are redacted from every log line and exception.
 """
 
 from __future__ import annotations
@@ -26,6 +29,39 @@ log = logging.getLogger("azdo_analyzer.http")
 _GUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _NUM_SEGMENT = re.compile(r"(?<=/)\d+(?=/|$)")
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
+
+# Every Azure DevOps REST route this tool may call (the path after ".../_apis/"). All are documented
+# read operations. Anything else - including GET routes not listed here - is refused before it is sent.
+READ_ENDPOINTS = (
+    r"connectionData",
+    r"projects",
+    r"projects/[^/]+",
+    r"identities",
+    r"hooks/subscriptions",
+    r"extensionmanagement/installedextensions",
+    r"packaging/feeds",
+    r"git/repositories",
+    r"git/repositories/[^/]+/(?:stats/branches|pullrequests|refs|items)",
+    r"policy/configurations",
+    r"tfvc/changesets",
+    r"build/definitions",
+    r"build/definitions/\d+",
+    r"build/builds",
+    r"build/builds/\d+/timeline",
+    r"release/definitions",
+    r"release/definitions/\d+",
+    r"release/deployments",
+    r"distributedtask/(?:tasks|pools|queues|variablegroups|securefiles|taskgroups|environments|deploymentgroups)",
+    r"distributedtask/pools/\d+/agents",
+    r"distributedtask/environments/\d+(?:/environmentdeploymentrecords)?",
+    r"wiki/wikis",
+    r"serviceendpoint/endpoints",
+    r"serviceendpoint/[^/]+/executionhistory",
+    r"pipelines/checks/configurations",
+    r"pipelines/pipelinepermissions/[^/]+/[^/]+",
+)
+_READ_ROUTE = re.compile(r"^(?:" + "|".join(READ_ENDPOINTS) + r")$")
+_API_PATH = re.compile(r"/_apis/(.+?)/?$")
 
 
 class ReadOnlyViolation(RuntimeError):
@@ -103,6 +139,7 @@ class AzdoClient:
         if not collection_url:
             raise ValueError("collection_url is required (e.g. https://azdo.example.com/DefaultCollection)")
         self.base = collection_url.rstrip("/")
+        self._host = httpx.URL(self.base).host
         token = base64.b64encode(f":{pat}".encode("utf-8")).decode("ascii")
         self.redact = Redactor([pat, token])
         self.api_version = api_version
@@ -128,10 +165,23 @@ class AzdoClient:
         )
 
     # ------------------------------------------------------------------ guards
-    @staticmethod
-    def _guard(request: httpx.Request) -> None:
-        if request.method.upper() != "GET":
-            raise ReadOnlyViolation(f"Refusing {request.method} {request.url.path}: azdo-analyzer is read-only")
+    def check_read_only(self, method: str, url: httpx.URL | str) -> None:
+        """Raise ReadOnlyViolation unless this is a GET to an allowlisted read endpoint on the collection host."""
+        target = url if isinstance(url, httpx.URL) else httpx.URL(url)
+        if method.upper() != "GET":
+            raise ReadOnlyViolation(f"Refusing {method} {target.path}: azdo-analyzer is read-only")
+        if target.host != self._host:
+            raise ReadOnlyViolation(f"Refusing request to {target.host}: only {self._host} is allowed")
+        match = _API_PATH.search(target.path)
+        if not match or not _READ_ROUTE.match(match.group(1)):
+            raise ReadOnlyViolation(f"Refusing GET {target.path}: not one of the read endpoints this tool uses")
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    def _guard(self, request: httpx.Request) -> None:
+        self.check_read_only(request.method, request.url)
 
     def close(self) -> None:
         self._http.close()
@@ -150,8 +200,7 @@ class AzdoClient:
         return f"{prefix}/_apis/{path.lstrip('/')}"
 
     def request(self, method: str, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
-        if method.upper() != "GET":
-            raise ReadOnlyViolation(f"Refusing {method} {url}: azdo-analyzer is read-only")
+        self.check_read_only(method, url)
         attempt = 0
         while True:
             started = time.monotonic()
