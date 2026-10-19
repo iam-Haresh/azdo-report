@@ -10,6 +10,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from azdo_analyzer.analyze import AnalysisResult, PipelineResult, ProjectResult, RepoResult
+from azdo_analyzer.analyze.archetype import DIMENSIONS
 from azdo_analyzer.cache import safe_name
 from azdo_analyzer.model import Pipeline
 from azdo_analyzer.report.graph import repo_graph
@@ -200,9 +201,18 @@ def repo_context(result: AnalysisResult, project: ProjectResult, repo: RepoResul
             script_constructs.append("System.AccessToken")
     if scan:
         script_constructs += [f"{h.file}:{h.line} {h.match}" for h in scan.hits if h.pattern in ("VSO_LOGGING_CMD", "ACCESS_TOKEN")][:8]
+    ar, prof = rules.archetype_rules, repo.profile
     windows = sorted({w for f in facts for w in f.windows_reasons})
-    if repo.profile.windows and not windows:
-        windows = [".NET Framework project files"]
+    if not windows:
+        windows = [f"{ar.label('stacks', s)} files" for s in prof.stacks if ar.rules["stacks"][s].windows]
+    macos = [ar.label("stacks", s) for s in prof.stacks if ar.rules["stacks"][s].macos]
+    runner_os = "; ".join(([f"Windows ({compact(windows)})"] if windows else []) + ([f"macOS ({compact(macos)})"] if macos else []))
+    archetype_detail = []
+    for section, _, title, _ in DIMENSIONS:
+        values = prof.values(section)
+        evidence = "; ".join(f"{v}: {', '.join(prof.evidence.get(f'{section}:{v}', [])[:2])}" for v in values)
+        archetype_detail.append({"title": title, "found": ", ".join(values) or ("unknown" if section == "stacks" else "none"),
+                                 "evidence": evidence or "—"})
     tools = set()
     for r in linked:
         for t in r.facts.tasks:
@@ -261,7 +271,7 @@ def repo_context(result: AnalysisResult, project: ProjectResult, repo: RepoResul
         "downstream": compact(downstream), "template_repos": compact({c for f in facts for c in f.cross_repo if "templates" in c}),
         "hooks": hooks, "script_constructs": compact(script_constructs, limit=10),
         "approvers": compact({a for f in facts for a in f.approvers}),
-        "runner_os": ("Windows (" + compact(windows) + ")") if windows else "Linux containers should work",
+        "runner_os": runner_os or "Linux containers should work", "archetype_detail": archetype_detail,
         "runner_tools": compact(sorted(tools)), "internal": compact({t for f in facts for t in f.internal_targets}),
         "pool_usage": pool_usage, "findings": repo.findings, "mermaid": repo_graph(project, repo),
     }

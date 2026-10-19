@@ -21,10 +21,12 @@
 | Last commit | newest commit on **any** branch | latest committer date (author date as fallback) across all branches ([details](../../../README.md#how-activity-is-calculated)) |
 | Open PRs | active pull requests | `git/repositories/{id}/pullrequests?searchCriteria.status=active` |
 | Oldest PR days | age of the oldest open PR, in days | each open PR's creation date |
-| Stack | language/platform | first part of the [archetype key](../concepts.md#archetype-key) |
-| Build tool | main build tool | second part of the archetype key |
-| Deploy targets | where it deploys | third part of the archetype key; `none` if no deployment was found |
-| Artifact | what the build produces | fourth part of the archetype key: `image`, `package`, `chart`, `files` or `none` |
+| Stack | what the code is: languages, frameworks, platforms, IaC. Several values are joined with ", ", for example `dotnet, angular`; `unknown` if none was recognised | first part of the [archetype key](../concepts.md#archetype-key); every value is listed in [Archetype values](../archetype-values.md#stack) |
+| Build tools | how it is built, for example `maven, docker` | second part of the archetype key ([values](../archetype-values.md#build-tools)) |
+| Test & scan tools | test runners and scanners the pipelines run or the repo configures, for example `sonarqube, karma`; `none` if none were found | [values](../archetype-values.md#test--scan-tools); not part of the key |
+| Deploy targets | where it deploys, for example `kubernetes` or `iis, deployment-group`; `none` if no deployment was found | third part of the archetype key ([values](../archetype-values.md#deploy-targets)) |
+| Artifacts | what its pipelines produce, for example `image, nuget-package`; `none` if nothing was found | fourth part of the archetype key ([values](../archetype-values.md#artifacts)) |
+| Markers | other notable files and frameworks, for example `docker, helm, spring-boot` | [values](../archetype-values.md#markers); not part of the key |
 | LFS | `yes` if Git LFS is used **(deep only)** | `.gitattributes` lines containing `filter=lfs` |
 | Submodules | `yes` if the repo has submodules **(deep only)** | `.gitmodules` |
 | Azure Artifacts feeds | feeds the repo's config files point to **(deep only)** | URLs containing `/_packaging/<feed>` in `nuget.config`, `.npmrc`, `settings.xml`, `pom.xml`, `pip.conf`, `build.gradle` and the other files listed under `feed_files` in `rules/scan_patterns.yaml` |

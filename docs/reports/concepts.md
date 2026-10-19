@@ -82,25 +82,53 @@ Pipelines and releases get their own status from their last run or deployment. T
 
 ## Archetype key
 
-The key has four parts: `stack | build tool | deploy target(s) | artifact`. All rules are in `rules/archetypes.yaml`.
+A repo's archetype has six dimensions. Each one can hold several values, joined with ", " in the reports. [Archetype values](archetype-values.md) lists every value and how it is found.
 
-- **Stack:** the first entry under `stacks:` that matches the repo's file names.
-  - For example `pom.xml` gives `java-maven`, and `*.csproj` targeting `net4x` gives `dotnet-framework`.
-  - Without files (inventory runs, or a repo not cloned), it is inferred from the build tool. If neither works, it is `unknown`.
-- **Build tool:** taken from the tasks (Maven → `maven`, VSBuild → `msbuild`, and so on).
-  - The most specific wins, in this order: maven, gradle, ant, msbuild, dotnet, npm, python, go, terraform, nuget, docker.
-  - Without a build task it falls back to the stack's default tool, otherwise `none`.
-- **Deploy target(s):** every rule under `deploy_targets:` whose tasks, connection types, deployment-group use or script commands match.
-  - For example HelmDeploy gives `kubernetes`, the IIS tasks give `iis`, and deployment-group jobs give `windows-vm`.
-  - Several targets are joined with `+`. `none` means no deployment was found.
-- **Artifact:** the first rule under `artifact_rules:` that matches:
-  - `image`: Docker tasks, a Dockerfile, or `docker`/`podman`/`buildah` build/push in scripts
-  - `package`: pack, push, publish or deploy with NuGet, dotnet, npm, Maven or Universal Packages
-  - `chart`: a `Chart.yaml`
-  - `files`: published or archived build artifacts
-  - `none`: nothing matched
-- **Named archetype:** the first entry under `named:` that matches the key, otherwise `custom`. Repos used only for YAML templates are named "AZDO YAML template repository".
-  - **Proposed template:** the template name in that entry.
+| Dimension | Answers | Examples | In the key |
+|---|---|---|---|
+| Stack | what the code is | `java-maven`, `dotnet`, `angular`, `terraform` | 1st part |
+| Build tools | how it is built | `maven`, `npm`, `docker`, `msbuild` | 2nd part |
+| Test & scan tools | which tests and scanners run | `sonarqube`, `karma`, `vstest` | no |
+| Deploy targets | where it is deployed | `kubernetes`, `iis`, `azure-app-service` | 3rd part |
+| Artifacts | what it produces | `image`, `nuget-package`, `files` | 4th part |
+| Markers | other notable files and frameworks | `docker`, `helm`, `spring-boot`, `jenkinsfile` | no |
+
+The key is `stacks | build tools | deploy targets | artifacts`, for example `dotnet, angular | dotnet, npm | iis | files`. An empty part shows `unknown` for the stack and `none` for the others. Values always appear in the order of `rules/archetypes.yaml`, so the same combination always gives the same key.
+
+How values are found (rules in `rules/archetypes.yaml`):
+- **Repo files** (deep runs): file names anywhere in the repo, sometimes with a content check.
+  - `angular.json` gives `angular`.
+  - A `*.csproj` targeting `net48` gives `dotnet-framework`, one targeting `net8.0` gives `dotnet`, and a multi-targeted `net48;net8.0` gives both.
+  - Folders such as `node_modules`, `bin`, `obj`, `packages` and `vendor` are ignored.
+- **The build pipelines and classic releases that use the repo:**
+  - task names and task inputs: HelmDeploy with `command: upgrade` gives deploy target `kubernetes`; with `command: package` it gives artifact `helm-chart`.
+  - commands in inline scripts and task inputs, such as `kubectl apply` or `./mvnw deploy`. `echo` / `Write-Host` lines and comments are ignored.
+  - repo script files that a pipeline calls by name, such as `ci/deploy.sh`.
+  - service connection types and deployment-group jobs.
+- **Replacements:** a specific value replaces a generic one. A front-end framework replaces `node`, `android` replaces `java-gradle`, and `azure-app-service` replaces `azure`.
+- **Fallback stacks** (`container`, `helm-charts`, `kubernetes-manifests`, `scripts`, `sql-scripts`) appear only when no other stack is found.
+- **Assumed build tool:** when no build step builds a stack, its usual tool is assumed, for example `npm` for Angular.
+- **No repo files** (inventory runs, or a repo that was not cloned): the stack is inferred from the build tools, for example VSBuild gives `dotnet-framework` and Maven gives `java-maven`.
+- Repos used only for YAML templates by other pipelines get the stack `azdo-yaml-templates`.
+- The repo's [dossier](repo-dossier.md) shows the evidence for every value: the file, task or script line that matched.
+
+### Named archetypes
+
+The `named:` entries in `rules/archetypes.yaml` give combinations a friendly name and a proposed shared GitLab template. Each entry has conditions (stack, and optionally build tools, test & scan tools, deploy targets, artifacts or markers). All the listed values must be present; `none` means that dimension is empty.
+
+A repo's names are chosen like this:
+1. Keep the entries whose conditions all match.
+2. Rank them: entries naming more stacks first, then entries with more conditions, then the order in the file.
+3. Take entries in that order, skipping an entry if one of its stacks already has a name.
+
+So a repo gets one name per stack, unless one entry names several stacks together. Examples:
+- `dotnet, angular` is named "ASP.NET Core + Angular", because that entry names both stacks.
+- `java-maven` with an image deployed to Kubernetes is named "Java/Maven -> container -> Kubernetes", because that entry beats the plain "Java/Maven" one.
+- `terraform, ansible` is named "Terraform / IaC, Ansible".
+
+`also_covers` lets an entry stand for the platform stacks it brings along. "React Native app", for example, also covers `android` and `ios`, so those don't get names of their own. Every stack has an entry with only `stack:`, so every combination gets a name. Nothing matches only when no stack is recognised, and then the name is `custom`.
+
+- **Proposed template:** the templates of the chosen entries.
 - `overrides.yaml` (`archetype`, `template`) replaces the computed values in the Tracker and the dossiers.
 
 ## Pipeline fingerprint and clones

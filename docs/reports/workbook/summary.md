@@ -65,6 +65,6 @@ Up to 10 archetype keys, by number of repos.
 
 | Column | What it shows | Derived from |
 |---|---|---|
-| Archetype | the key `stack \| build \| deploy \| artifact` | [archetype key](../concepts.md#archetype-key) |
-| Name | named archetype, or `custom` | `rules/archetypes.yaml` → `named:` |
+| Archetype | the key `stack \| build \| deploy \| artifact`; each part can list several values | [archetype key](../concepts.md#archetype-key) |
+| Name | named archetypes (comma-separated), or `custom` | [named archetypes](../concepts.md#named-archetypes) |
 | Repos | repos with this key | [Archetypes sheet](archetypes.md) |

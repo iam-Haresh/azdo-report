@@ -16,6 +16,7 @@
 | Generated / Data as of | report time / when the data was fetched (deep or inventory) |
 | Archetype, Complexity, Score, Activity, Recommendation, Template, Wave, Owner, Status | same values as the repo's row on the [Tracker sheet](workbook/tracker.md), with `overrides.yaml` applied |
 | Archetype key, Score breakdown | the [archetype key](concepts.md#archetype-key), and every contribution to the [score](concepts.md#complexity-score) |
+| Archetype table | one row per dimension (Stack, Build tools, Test & scan tools, Deploy targets, Artifacts, Markers): its values, and for each value the evidence that found it, such as `angular.json`, `task Maven@3 in pipeline shop-ci`, or a script line | [archetype key](concepts.md#archetype-key), [Archetype values](archetype-values.md) |
 | Notes | `overrides.yaml` → `notes` |
 | Blockers / high-severity findings box | the repo's blocker and high findings, including those of its pipelines, releases and variable groups ([Findings](workbook/findings.md)) |
 
@@ -31,7 +32,7 @@
 | 6. Artifacts and feeds | Azure Artifacts feeds referenced in config files; other registries (Artifactory, Nexus, …); Dockerfile base images; universal packages and downloads of other pipelines' artifacts | file scan and task inputs |
 | 7. Dependencies and integrations | pipelines that trigger this one, and pipelines it triggers; shared template repos; the project's service hooks; AZDO-specific script constructs with file:line | [Dependencies](workbook/dependencies.md) data and file scan |
 | 8. Identity and access | approvers (users and groups) that must exist in GitLab | stage approvals and environment approval checks |
-| 9. Network and runners | runner OS (Windows, with reasons, or "Linux containers should work"); tools the runner image needs; internal-only targets; AZDO pools used, with peak concurrency and build minutes per month | findings data; [Agents & Pools](workbook/agents-and-pools.md) data for this project |
+| 9. Network and runners | runner OS (Windows and/or macOS, with reasons, or "Linux containers should work"); tools the runner image needs; internal-only targets; AZDO pools used, with peak concurrency and build minutes per month | findings data; [Agents & Pools](workbook/agents-and-pools.md) data for this project |
 | 10. Cutover and validation | manual checklist only | — |
 | Findings | every finding for this repo: Severity, Finding, Pipeline, Detail, Remediation | [Findings](workbook/findings.md) |
 | Dependency graph | Mermaid diagram of the repo, its pipelines and releases, and everything they use | [Dependencies](workbook/dependencies.md) rows for this repo. GitHub, GitLab and VS Code render it, or paste it into https://mermaid.live |

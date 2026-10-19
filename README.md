@@ -94,7 +94,7 @@ Manual decisions go in `overrides.yaml` (see `overrides.example.yaml`; keep it i
   - The result is cross-checked against the tasks that actually ran in the last good run.
 - **Activity:** last commit, run and deployment give Active / Dormant / Dead (details below). Run statistics, peak concurrency and build minutes per pool are computed from the run history.
 - **Usage graph:** links each repo to its pipelines, releases and the resources they use (variable groups, connections, secure files, pools, environments, deployment groups, template repos). It is confirmed with connection execution history and pipeline authorizations.
-- **Archetype:** stack × build tool × deploy target × artifact. **Complexity:** the checklist baseline plus weighted points. **Findings:** severity, evidence and remediation.
+- **Archetype:** stack, build tools, test & scan tools, deploy targets, artifacts and markers. A dimension can hold several values (an ASP.NET Core + Angular repo has the stack `dotnet, angular`); every value is listed in [docs/reports/archetype-values.md](docs/reports/archetype-values.md). **Complexity:** the checklist baseline plus weighted points. **Findings:** severity, evidence and remediation.
 
 ### How activity is calculated
 
@@ -124,7 +124,7 @@ All judgement lives in editable YAML under `rules/`:
 | File | Contents |
 |---|---|
 | `task_mapping.yaml` | AZDO task → GitLab approach (unmapped tasks are listed by usage) |
-| `archetypes.yaml` | detection rules and named archetypes |
+| `archetypes.yaml` | archetype detection rules and named archetypes (regenerate the values page after editing: `python -m azdo_analyzer.report.archetype_doc`) |
 | `scoring.yaml` | complexity weights and thresholds |
 | `findings.yaml` | severity, title, remediation |
 | `scan_patterns.yaml` | content-scan regexes |

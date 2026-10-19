@@ -27,6 +27,7 @@ Each run writes to `out/reports/<run date>/`:
 | prepare one repo's migration | its [dossier](repo-dossier.md) |
 | know what blocks or complicates a migration | [Findings sheet](workbook/findings.md) |
 | decide which shared GitLab CI templates to build | [Archetypes](workbook/archetypes.md) and [Tasks](workbook/tasks.md) sheets |
+| see every stack, build tool, test or scan tool, deploy target, artifact and marker the tool can detect | [Archetype values](archetype-values.md) |
 | see which repo uses which pipeline, connection or variable group | [Dependencies sheet](workbook/dependencies.md) |
 | plan CI/CD variables and secrets | [Variables](workbook/variables.md), [Variable Groups](workbook/variable-groups.md), [Secure Files](workbook/secure-files.md) |
 | plan runners and network access | [Agents & Pools](workbook/agents-and-pools.md), [Environments & Deploy Groups](workbook/environments-and-deploy-groups.md), [Service Connections](workbook/service-connections.md) |
@@ -38,6 +39,6 @@ Each run writes to `out/reports/<run date>/`:
 [Concepts](concepts.md) explains:
 - inventory vs deep mode, and the time windows
 - activity status, complexity score and severity
-- archetype key and pipeline fingerprint
+- archetype dimensions, archetype key, named archetypes and pipeline fingerprint
 - GitLab path and "internal host"
 - how lists and empty values are shown

@@ -53,7 +53,7 @@ These are raised on the repo when found in its files (deep), and on a pipeline w
 
 | ID | Severity | Raised when |
 |---|---|---|
-| `WINDOWS_TOOLCHAIN` | high | Windows-only tasks, a Windows image or demand (msbuild, visualstudio, …), or a pool whose agents are all Windows. On a repo: `.NET Framework` project files, if no pipeline already raised it |
+| `WINDOWS_TOOLCHAIN` | high | Windows-only tasks, a Windows image or demand (msbuild, visualstudio, …), or a pool whose agents are all Windows. On a repo: stacks that need Windows (.NET Framework, WPF / WinForms, SSIS, ... : `windows: true` in `rules/archetypes.yaml`), if no pipeline already raised it |
 | `UNKNOWN_TASK` | high | a task isn't in the server's task catalogue |
 | `UNMAPPED_TASK` | medium | tasks with no entry in `rules/task_mapping.yaml` |
 | `MARKETPLACE_TASK` | low | tasks that come from extensions |

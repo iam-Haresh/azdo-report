@@ -7,6 +7,12 @@
 | {{ repo.archetype|cell }} | {{ repo.complexity }}{% if repo.score.blocker %} ⛔ blocker{% endif %} | {{ repo.score.points }} | {{ repo.status }} | {{ (o.recommendation or repo.recommendation)|cell }} | {{ (o.template or repo.profile.template or "")|cell }} | {{ o.wave or "" }} | {{ o.owner or "" }} | {{ o.status or "Not started" }} |
 
 Archetype key: `{{ repo.profile.key }}` · Score breakdown: {{ repo.score.describe() or "—" }}
+
+| Archetype dimension | Values | Evidence |
+|---|---|---|
+{% for a in archetype_detail %}| {{ a.title }} | {{ a.found|cell }} | {{ a.evidence|cell }} |
+{% endfor %}
+
 {% if o.notes %}
 Notes: {{ o.notes }}
 {% endif %}

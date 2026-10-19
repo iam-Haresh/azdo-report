@@ -184,7 +184,11 @@ def doctor(config: Optional[Path] = ConfigOpt, collection: Optional[str] = Colle
 
 def _run(cfg: Config, *, projects: list[str], all_projects: bool, deep: bool, refresh: bool, offline: bool,
          no_clone: bool, verbose: bool, label: str) -> None:
-    rules = load_rules(cfg.rules_path)
+    try:
+        rules = load_rules(cfg.rules_path)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Rules error:[/red] {exc}")
+        raise typer.Exit(2) from None
     now = utcnow()
     store = RawStore(cfg.raw_dir)
     _check_cache_collection(cfg, store)

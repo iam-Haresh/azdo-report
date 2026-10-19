@@ -1,125 +1,1458 @@
-# Archetype detection: stack x build tool x deploy target x artifact.
-# Run `analyze`, look at the Archetypes sheet, then name the top 5-8 keys under `named:`.
+# Archetype detection rules.
+#
+# A repo's archetype has six dimensions. Each one can hold several values; the reports join them with ", ".
+#   stacks          what the code is: languages, frameworks, platforms, IaC     -> "Stack" column
+#   build_tools     how it is built                                            -> "Build tools"
+#   quality_tools   the tests and scanners it runs                             -> "Test & scan tools"
+#   deploy_targets  where it is deployed                                       -> "Deploy targets"
+#   artifacts       what it produces                                           -> "Artifacts"
+#   markers         other notable files and frameworks (Dockerfile, Helm chart, Spring Boot, ...) -> "Markers"
+# The archetype key is "stacks | build tools | deploy targets | artifacts". Test & scan tools and markers are not part of it.
+#
+# Every value is an id with a rule. The order of the ids is the order used in the reports.
+# A value is found when ANY of its signals matches:
+#   files             file names anywhere in the repo, case-insensitive, with * and ? wildcards.
+#                     A pattern containing "/" is matched against the whole path ("*" also crosses folders).
+#   content_regex     used with files: one of those files (up to 20, shallowest first) must contain this regex.
+#   match             more file alternatives, each {files: [...], content_regex: '...'}.
+#   markers           one of these markers was found.
+#   tasks             an Azure DevOps task (name without @version) in a pipeline or release that uses the repo.
+#   task_inputs       {Task: {input: [values]}}: the task with one of these input values. "(unset)" = the input is not set.
+#   commands          a command in an inline script or a task input, e.g. 'mvn' or 'kubectl apply'.
+#                     Flags may sit between the words. echo / Write-Host lines and comments are ignored.
+#   script_regex      a regex over inline scripts and task inputs (case-insensitive).
+#   endpoint_types    a service connection of this type is used.
+#   deployment_group  true: a deployment-group job.
+# Folders named node_modules, bin, obj, packages, vendor, dist, target, .gradle, .idea, .vs, __pycache__ and .venv are ignored.
+# Script files that a pipeline calls by name (e.g. ./ci/deploy.sh) are searched for commands too.
+#
+# Other keys:
+#   label      the description shown in the reports.
+#   replaces   ids in the same section that are dropped when this one is found (e.g. angular replaces node).
+#   fallback   (stacks) reported only when no other stack was found (e.g. "Dockerfile only").
+#   windows / macos   (stacks) needs a Windows / macOS runner.
+#   tools      (stacks) build tools that build this stack. When none of them is found, the first one is assumed.
+#   stack      (build tools) the stack to assume when the repo's files are not available (inventory runs, repo not cloned).
+#
+# docs/reports/archetype-values.md lists every value. After editing, run `azdo-analyzer analyze --offline` to see the effect.
 
-stacks:   # evaluated in order; first match is the primary stack (globs match file names anywhere in the repo)
-  - id: dotnet-framework
-    files: ["*.csproj", "*.vbproj"]
-    content_regex: '<TargetFramework(?:Version|s)?>[^<]*(?:v4\.|net4\d)'
-    windows: true
-  - id: dotnet
-    files: ["*.csproj", "*.fsproj", "*.vbproj", "*.sln", "global.json"]
-  - id: java-maven
-    files: [pom.xml]
-  - id: java-gradle
-    files: [build.gradle, build.gradle.kts]
-  - id: java-ant
-    files: [build.xml]
-  - id: node
+markers:
+  docker:
+    label: Dockerfile
+    files: [Dockerfile, '*.Dockerfile', 'Dockerfile.*', Containerfile, 'Containerfile.*']
+  docker-compose:
+    label: Docker Compose file
+    files: ['docker-compose*.yml', 'docker-compose*.yaml', compose.yml, compose.yaml, 'compose.*.yml', 'compose.*.yaml']
+  helm:
+    label: Helm chart (Chart.yaml)
+    files: [Chart.yaml]
+  kustomize:
+    label: Kustomize configuration
+    files: [kustomization.yaml, kustomization.yml, Kustomization]
+  k8s-manifests:
+    label: Kubernetes manifests
+    files: ['*k8s*/*.yaml', '*k8s*/*.yml', '*kube*/*.yaml', '*kube*/*.yml', '*manifest*/*.yaml', '*manifest*/*.yml',
+            '*deploy*/*.yaml', '*deploy*/*.yml', '*.k8s.yaml', '*.k8s.yml', deployment.yaml, deployment.yml]
+    content_regex: '^kind:\s*(Deployment|StatefulSet|DaemonSet|CronJob|Job|Service|Ingress|ConfigMap|PersistentVolumeClaim|HorizontalPodAutoscaler)\s*$'
+  openshift:
+    label: OpenShift objects (DeploymentConfig, Route, BuildConfig, Template)
+    files: ['*openshift*/*.yaml', '*openshift*/*.yml', '*openshift*/*.json', '*k8s*/*.yaml', '*k8s*/*.yml', '*manifest*/*.yaml',
+            '*manifest*/*.yml', '*deploy*/*.yaml', '*deploy*/*.yml', '*.template.yaml', '*.template.yml', '*.template.json']
+    content_regex: '^kind:\s*(DeploymentConfig|Route|BuildConfig|ImageStream|Template)\s*$|"kind"\s*:\s*"(DeploymentConfig|Route|BuildConfig|ImageStream|Template)"'
+  azure-functions:
+    label: Azure Functions project (host.json)
+    files: [host.json]
+    content_regex: '"version"\s*:\s*"2\.0"|extensionBundle'
+  serverless:
+    label: Serverless Framework (serverless.yml)
+    files: [serverless.yml, serverless.yaml, serverless.ts, serverless.js]
+  aws-sam:
+    label: AWS SAM template
+    files: [template.yaml, template.yml, samconfig.toml]
+    content_regex: 'AWS::Serverless|default\.deploy'
+  aspnet-web:
+    label: ASP.NET / ASP.NET Core web project
+    files: ['*.csproj', '*.vbproj', '*.fsproj']
+    content_regex: 'Sdk="Microsoft\.NET\.Sdk\.(Web|BlazorWebAssembly|Razor)"|349c5851-65df-11da-9384-00065b846f21|Microsoft\.AspNetCore\.App'
+    match:
+      - files: [web.config]
+  dotnet-worker:
+    label: .NET worker service
+    files: ['*.csproj', '*.vbproj', '*.fsproj']
+    content_regex: 'Sdk="Microsoft\.NET\.Sdk\.Worker"'
+  spring-boot:
+    label: Spring Boot
+    files: [pom.xml, build.gradle, build.gradle.kts]
+    content_regex: 'spring-boot'
+  quarkus:
+    label: Quarkus
+    files: [pom.xml, build.gradle, build.gradle.kts]
+    content_regex: 'io\.quarkus'
+  java-war:
+    label: WAR / EAR packaging (application server)
+    files: [pom.xml, build.gradle, build.gradle.kts]
+    content_regex: '<packaging>\s*(war|ear)\s*</packaging>|(apply plugin:|id)\s*\(?\s*[''"](war|ear)[''"]'
+    match:
+      - files: ['*WEB-INF/web.xml']
+  django:
+    label: Django
+    files: [manage.py]
+    content_regex: 'django'
+    match:
+      - files: ['requirements*.txt', pyproject.toml, Pipfile, setup.py, setup.cfg]
+        content_regex: '\bdjango\b'
+  flask:
+    label: Flask
+    files: ['requirements*.txt', pyproject.toml, Pipfile, setup.py, setup.cfg]
+    content_regex: '\bflask\b'
+  fastapi:
+    label: FastAPI
+    files: ['requirements*.txt', pyproject.toml, Pipfile, setup.py, setup.cfg]
+    content_regex: '\bfastapi\b'
+  express:
+    label: Express (Node.js server)
     files: [package.json]
-  - id: python
-    files: [requirements.txt, pyproject.toml, setup.py, Pipfile]
-  - id: go
+    content_regex: '"express"\s*:'
+  nestjs:
+    label: NestJS
+    files: [nest-cli.json]
+    match:
+      - files: [package.json]
+        content_regex: '"@nestjs/core"\s*:'
+  js-monorepo:
+    label: JavaScript monorepo (Nx, Lerna, Turborepo, Rush, workspaces)
+    files: [nx.json, lerna.json, turbo.json, pnpm-workspace.yaml, rush.json]
+    match:
+      - files: [package.json]
+        content_regex: '"workspaces"\s*:'
+  config-transforms:
+    label: Environment-specific config files (Web.*.config, appsettings.*.json, parameters.xml)
+    files: ['web.*.config', 'app.*.config', 'appsettings.*.json', parameters.xml, '*.SetParameters.xml', '*.transform']
+  jenkinsfile:
+    label: Jenkinsfile (may also be built by Jenkins)
+    files: [Jenkinsfile, '*.jenkinsfile', 'Jenkinsfile.*']
+  gitlab-ci:
+    label: Already has a .gitlab-ci.yml
+    files: [.gitlab-ci.yml, .gitlab-ci.yaml]
+  github-actions:
+    label: GitHub Actions workflows
+    files: ['.github/workflows/*.yml', '.github/workflows/*.yaml']
+  other-ci:
+    label: Other CI configuration (Travis, CircleCI, Bitbucket, TeamCity, Bamboo, AppVeyor, Drone, Cloud Build, CodeBuild)
+    files: [.travis.yml, '.circleci/config.yml', bitbucket-pipelines.yml, '.teamcity/settings.kts', 'bamboo-specs/*', appveyor.yml,
+            .appveyor.yml, .drone.yml, cloudbuild.yaml, cloudbuild.yml, buildspec.yml]
+  devcontainer:
+    label: Dev container definition
+    files: ['.devcontainer/devcontainer.json', .devcontainer.json, '.devcontainer/*/devcontainer.json']
+
+stacks:
+  # --- .NET -------------------------------------------------------------------------------------------------
+  dotnet-framework:
+    label: .NET Framework (Windows)
+    files: ['*.csproj', '*.vbproj', '*.fsproj', Directory.Build.props]
+    content_regex: '<TargetFramework(?:Version|s)?>[^<]*\b(?:v[1-4]\.\d|net[1-4]\d{1,2}(?![\d.]))'
+    windows: true
+    replaces: [dotnet-project]
+    tools: [msbuild, dotnet, cake, nuke]
+  dotnet:
+    label: .NET (Core, 5 and later)
+    files: ['*.csproj', '*.vbproj', '*.fsproj', Directory.Build.props, global.json]
+    content_regex: '<TargetFrameworks?>[^<]*\b(?:net(?:[5-9]|\d{2})\.\d|netcoreapp\d|netstandard\d)|"sdk"\s*:'
+    replaces: [dotnet-project]
+    tools: [dotnet, msbuild, cake, nuke]
+  dotnet-desktop:
+    label: WPF / WinForms on .NET (Windows)
+    files: ['*.csproj', '*.vbproj', Directory.Build.props]
+    content_regex: '<Use(?:WPF|WindowsForms)>\s*true|<TargetFrameworks?>[^<]*\bnet\d+\.\d+-windows'
+    windows: true
+    replaces: [dotnet-project]
+    tools: [dotnet, msbuild]
+  windows-app:
+    label: UWP / WinUI / MSIX packaged app (Windows)
+    files: [Package.appxmanifest, '*.wapproj']
+    match:
+      - files: ['*.csproj']
+        content_regex: '<UseWinUI>\s*true|<TargetPlatformIdentifier>\s*UAP'
+    windows: true
+    replaces: [dotnet-project]
+    tools: [msbuild]
+  xamarin:
+    label: Xamarin (end of support May 2024; iOS builds need macOS)
+    files: ['*.csproj']
+    content_regex: 'Xamarin\.(?:iOS|Android|Forms|Essentials)|MonoAndroid'
+    replaces: [dotnet-project]
+    tools: [msbuild]
+  maui:
+    label: .NET MAUI (iOS and macOS targets need macOS)
+    files: ['*.csproj']
+    content_regex: '<UseMaui>\s*true'
+    replaces: [dotnet-project]
+    tools: [dotnet]
+  dotnet-project:
+    label: .NET project (target framework not detected)
+    files: ['*.csproj', '*.vbproj', '*.fsproj', '*.sln']
+    tools: [dotnet, msbuild]
+
+  # --- JVM --------------------------------------------------------------------------------------------------
+  java-maven:
+    label: Java / Maven
+    files: [pom.xml]
+    tools: [maven]
+  java-gradle:
+    label: Java / Kotlin with Gradle
+    files: [build.gradle, build.gradle.kts, settings.gradle, settings.gradle.kts]
+    tools: [gradle]
+  java-ant:
+    label: Java / Ant
+    files: [build.xml]
+    content_regex: '<target\b[^>]*\bname='
+    tools: [ant]
+  scala-sbt:
+    label: Scala / sbt
+    files: [build.sbt]
+    tools: [sbt]
+
+  # --- other back-end languages ------------------------------------------------------------------------------
+  python:
+    label: Python
+    files: ['requirements*.txt', pyproject.toml, setup.py, setup.cfg, Pipfile, environment.yml, environment.yaml, tox.ini]
+    tools: [pip, poetry, pipenv, conda, uv]
+  go:
+    label: Go
     files: [go.mod]
-  - id: terraform
-    files: ["*.tf"]
-  - id: ansible
-    files: [ansible.cfg, "playbook*.yml", site.yml]
-  - id: database
-    files: ["*.sqlproj", flyway.conf, liquibase.properties]
-  - id: powershell
-    files: ["*.psd1", "*.psm1"]
+    tools: [go]
+  rust:
+    label: Rust
+    files: [Cargo.toml]
+    tools: [cargo]
+  php:
+    label: PHP
+    files: [composer.json]
+    tools: [composer]
+  ruby:
+    label: Ruby
+    files: [Gemfile]
+    tools: [bundler]
+  cpp-msvc:
+    label: C / C++ Visual Studio project (Windows)
+    files: ['*.vcxproj', '*.vcproj']
+    windows: true
+    replaces: [c-cpp]
+    tools: [msbuild]
+  cpp-cmake:
+    label: C / C++ with CMake
+    files: [CMakeLists.txt]
+    replaces: [c-cpp]
+    tools: [cmake]
+  c-cpp:
+    label: C / C++
+    files: ['*.c', '*.cpp', '*.cc', '*.cxx']
+    tools: [make, cmake]
+  r:
+    label: R
+    files: [renv.lock, '*.Rproj']
 
-markers:   # extra signals from files
-  docker: [Dockerfile, "*.Dockerfile", "Dockerfile.*", Containerfile]
-  helm: [Chart.yaml]
-  kustomize: [kustomization.yaml, kustomization.yml]
-  openshift: ["*.template.yaml", "*.template.yml"]
+  # --- front-end and JavaScript -------------------------------------------------------------------------------
+  angular:
+    label: Angular
+    files: [angular.json, .angular-cli.json]
+    match:
+      - files: [package.json]
+        content_regex: '"@angular/core"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, pnpm, angular-cli]
+  angularjs:
+    label: AngularJS 1.x (end of life)
+    files: [package.json, bower.json]
+    content_regex: '"angular"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, bower, grunt, gulp]
+  react:
+    label: React
+    files: [package.json]
+    content_regex: '"react"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, pnpm]
+  nextjs:
+    label: Next.js
+    files: [next.config.js, next.config.mjs, next.config.ts]
+    match:
+      - files: [package.json]
+        content_regex: '"next"\s*:'
+    replaces: [react, node]
+    tools: [npm, yarn, pnpm]
+  gatsby:
+    label: Gatsby
+    files: [gatsby-config.js, gatsby-config.ts, gatsby-config.mjs]
+    replaces: [react, node]
+    tools: [npm, yarn, pnpm]
+  react-native:
+    label: React Native
+    files: [package.json]
+    content_regex: '"react-native"\s*:'
+    replaces: [react, node]
+    tools: [npm, yarn, pnpm]
+  vue:
+    label: Vue.js
+    files: [vue.config.js]
+    match:
+      - files: [package.json]
+        content_regex: '"vue"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, pnpm]
+  nuxt:
+    label: Nuxt
+    files: [nuxt.config.js, nuxt.config.ts]
+    match:
+      - files: [package.json]
+        content_regex: '"nuxt"\s*:'
+    replaces: [vue, node]
+    tools: [npm, yarn, pnpm]
+  svelte:
+    label: Svelte / SvelteKit
+    files: [svelte.config.js]
+    match:
+      - files: [package.json]
+        content_regex: '"svelte"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, pnpm]
+  electron:
+    label: Electron desktop app
+    files: [package.json]
+    content_regex: '"electron"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, pnpm]
+  hybrid-mobile:
+    label: Ionic / Capacitor / Cordova hybrid app
+    files: [ionic.config.json, capacitor.config.json, capacitor.config.ts]
+    match:
+      - files: [package.json]
+        content_regex: '"(?:@ionic/(?:angular|react|vue)|@capacitor/core|cordova-android|cordova-ios)"\s*:'
+    replaces: [node]
+    tools: [npm, yarn, pnpm]
+  spfx:
+    label: SharePoint Framework (SPFx)
+    files: ['config/package-solution.json']
+    match:
+      - files: [package.json]
+        content_regex: '"@microsoft/sp-'
+    replaces: [node]
+    tools: [npm, gulp]
+  node:
+    label: Node.js / JavaScript (no front-end framework found)
+    files: [package.json]
+    tools: [npm, yarn, pnpm]
 
-build_tools:   # task name (without @major) -> build tool
-  Maven: maven
-  Gradle: gradle
-  Ant: ant
-  VSBuild: msbuild
-  MSBuild: msbuild
-  DotNetCoreCLI: dotnet
-  NuGetCommand: nuget
-  Npm: npm
-  Gulp: npm
-  Grunt: npm
-  UsePythonVersion: python
-  PythonScript: python
-  GoTool: go
-  TerraformTaskV4: terraform
-  TerraformTaskV3: terraform
-  TerraformCLI: terraform
-  Docker: docker
+  # --- mobile ----------------------------------------------------------------------------------------------------
+  android:
+    label: Android app (Android SDK)
+    files: [AndroidManifest.xml]
+    match:
+      - files: [build.gradle, build.gradle.kts]
+        content_regex: 'com\.android\.(?:application|library)'
+    replaces: [java-gradle]
+    tools: [gradle]
+  ios:
+    label: iOS / macOS app (Xcode; needs a macOS runner)
+    files: ['*.xcodeproj/project.pbxproj', '*.xcworkspace/contents.xcworkspacedata', Podfile, Cartfile]
+    macos: true
+    tools: [xcodebuild, fastlane]
+  flutter:
+    label: Flutter
+    files: [pubspec.yaml]
+    content_regex: 'sdk:\s*flutter'
+    tools: [flutter]
 
-stack_default_tool:   # used when no build task is found
-  dotnet-framework: msbuild
-  dotnet: dotnet
-  java-maven: maven
-  java-gradle: gradle
-  java-ant: ant
-  node: npm
-  python: python
-  go: go
-  terraform: terraform
+  # --- databases, data and BI -----------------------------------------------------------------------------------
+  database:
+    label: Database project (SSDT, Flyway, Liquibase)
+    files: ['*.sqlproj', flyway.conf, flyway.toml, liquibase.properties, 'db.changelog*.xml', 'db.changelog*.yaml', 'db.changelog*.yml']
+  ssis:
+    label: SSIS packages (Windows)
+    files: ['*.dtproj']
+    windows: true
+    tools: [ssis-build, devenv]
+  ssrs:
+    label: SSRS reports (Windows)
+    files: ['*.rptproj']
+    windows: true
+    tools: [msbuild, devenv]
+  ssas:
+    label: SSAS models (Windows)
+    files: ['*.smproj', '*.dwproj']
+    windows: true
+    tools: [msbuild, devenv]
+  power-bi:
+    label: Power BI reports
+    files: ['*.pbix', '*.pbip', '*.pbit']
+  azure-data-factory:
+    label: Azure Data Factory
+    files: [ARMTemplateForFactory.json, publish_config.json, '*linkedService/*.json', '*dataset/*.json', '*factory/*.json']
+    content_regex: 'Microsoft\.DataFactory|"typeProperties"|"publishBranch"'
+  databricks:
+    label: Databricks asset bundle
+    files: [databricks.yml, databricks.yaml]
+  dbt:
+    label: dbt project
+    files: [dbt_project.yml]
+
+  # --- other platforms ---------------------------------------------------------------------------------------------
+  power-platform:
+    label: Power Platform solution / PCF control
+    files: ['*.cdsproj', '*.pcfproj', '*Other/Solution.xml']
+  salesforce:
+    label: Salesforce (SFDX)
+    files: [sfdx-project.json]
+  biztalk:
+    label: BizTalk (Windows)
+    files: ['*.btproj']
+    windows: true
+    tools: [msbuild]
+  delphi:
+    label: Delphi (Windows)
+    files: ['*.dproj']
+    windows: true
+    tools: [msbuild]
+  vb6:
+    label: Visual Basic 6 (Windows)
+    files: ['*.vbp']
+    windows: true
+
+  # --- infrastructure as code and configuration --------------------------------------------------------------------
+  terraform:
+    label: Terraform / Terragrunt
+    files: ['*.tf', terragrunt.hcl]
+    tools: [terraform]
+  bicep:
+    label: Bicep
+    files: ['*.bicep', '*.bicepparam']
+  arm-templates:
+    label: ARM templates
+    files: ['azuredeploy*.json', mainTemplate.json, template.json, '*.deploymentTemplate.json', '*.arm.json']
+    content_regex: 'schemas/[^"]*deploymentTemplate\.json'
+  cloudformation:
+    label: AWS CloudFormation / SAM
+    files: ['*.template', '*.template.json', '*.template.yaml', '*.template.yml', '*.cfn.json', '*.cfn.yaml', '*.cfn.yml',
+            template.yaml, template.yml, '*cloudformation*/*.yaml', '*cloudformation*/*.yml', '*cloudformation*/*.json']
+    content_regex: 'AWSTemplateFormatVersion|AWS::\w+::\w+'
+  aws-cdk:
+    label: AWS CDK
+    files: [cdk.json]
+  pulumi:
+    label: Pulumi
+    files: [Pulumi.yaml, Pulumi.yml]
+  ansible:
+    label: Ansible
+    files: [ansible.cfg, 'playbook*.yml', 'playbook*.yaml', site.yml, site.yaml, '*roles/*/tasks/main.yml', '*roles/*/tasks/main.yaml']
+  chef:
+    label: Chef
+    files: [Berksfile, Policyfile.rb, '*recipes/*.rb']
+  puppet:
+    label: Puppet
+    files: ['*.pp', Puppetfile]
+  packer:
+    label: Packer (VM images)
+    files: ['*.pkr.hcl', '*.pkr.json']
+    tools: [packer]
+  powershell:
+    label: PowerShell module
+    files: ['*.psd1', '*.psm1']
+  docs:
+    label: Documentation site (MkDocs, DocFX, Sphinx, Hugo, Jekyll, Docusaurus, Antora)
+    files: [mkdocs.yml, mkdocs.yaml, docfx.json, hugo.toml, hugo.yaml, _config.yml, docusaurus.config.js, docusaurus.config.ts,
+            antora.yml, antora-playbook.yml, 'docs/conf.py', 'doc/conf.py', 'docs/source/conf.py']
+
+  # --- set by the tool -------------------------------------------------------------------------------------------
+  azdo-yaml-templates:
+    label: Azure DevOps YAML templates used by other pipelines (set by the tool, no file rule)
+
+  # --- fallbacks: only when no other stack was found ------------------------------------------------------------------
+  helm-charts:
+    label: Helm charts only
+    markers: [helm]
+    fallback: true
+    tools: [helm]
+  kubernetes-manifests:
+    label: Kubernetes / OpenShift manifests only
+    markers: [kustomize, k8s-manifests, openshift]
+    fallback: true
+  container:
+    label: Dockerfile / Compose only
+    markers: [docker, docker-compose]
+    fallback: true
+    tools: [docker]
+  sql-scripts:
+    label: SQL scripts only
+    files: ['*.sql']
+    fallback: true
+  scripts:
+    label: Scripts only (shell, PowerShell, batch, Python)
+    files: ['*.sh', '*.bash', '*.ps1', '*.bat', '*.cmd', '*.py', '*.pl', '*.groovy']
+    fallback: true
+
+build_tools:
+  # --- JVM ----------------------------------------------------------------------------------------------------
+  maven:
+    label: Maven
+    tasks: [Maven, ArtifactoryMaven, JFrogMaven]
+    commands: [mvn, mvnw]
+    files: [mvnw, mvnw.cmd]
+    stack: java-maven
+  gradle:
+    label: Gradle
+    tasks: [Gradle, ArtifactoryGradle, JFrogGradle]
+    commands: [gradle, gradlew]
+    files: [gradlew, gradlew.bat]
+    stack: java-gradle
+  ant:
+    label: Ant
+    tasks: [Ant]
+    commands: [ant]
+    stack: java-ant
+  sbt:
+    label: sbt
+    commands: [sbt]
+    stack: scala-sbt
+
+  # --- .NET -----------------------------------------------------------------------------------------------------
+  msbuild:
+    label: MSBuild / Visual Studio build (Windows)
+    tasks: [VSBuild, MSBuild, XamarinAndroid, XamariniOS]
+    commands: [msbuild]
+    stack: dotnet-framework
+  dotnet:
+    label: dotnet CLI
+    tasks: [DotNetCoreCLI]
+    commands: ['dotnet build', 'dotnet test', 'dotnet publish', 'dotnet pack', 'dotnet restore', 'dotnet run', 'dotnet msbuild']
+    stack: dotnet
+  nuget:
+    label: NuGet CLI (restore / pack / push)
+    tasks: [NuGetCommand, NuGetRestore, NuGetInstaller, NuGet, NuGetPackager, NuGetPublisher, ArtifactoryNuGet]
+    commands: ['nuget restore', 'nuget pack', 'nuget push', 'nuget install']
+    files: [packages.config]
+  cake:
+    label: Cake build script
+    tasks: [Cake]
+    commands: [cake, 'dotnet cake', dotnet-cake]
+    files: [build.cake]
+  nuke:
+    label: NUKE build
+    commands: [nuke]
+    files: [.nuke, '.nuke/parameters.json']
+  psake:
+    label: psake (PowerShell build)
+    commands: [Invoke-psake]
+    files: [psakefile.ps1]
+  devenv:
+    label: Visual Studio IDE build (devenv, Windows)
+    commands: [devenv]
+  ssis-build:
+    label: SSIS build task
+    tasks: [SSISBuild]
+    stack: ssis
+
+  # --- JavaScript -------------------------------------------------------------------------------------------------
+  npm:
+    label: npm
+    tasks: [Npm, ArtifactoryNpm, JFrogNpm]
+    commands: ['npm ci', 'npm install', 'npm i', 'npm run', 'npm test', 'npm publish', 'npm pack', npx]
+    files: [package-lock.json, npm-shrinkwrap.json]
+    stack: node
+  yarn:
+    label: Yarn
+    tasks: [Yarn]
+    commands: [yarn]
+    files: [yarn.lock, .yarnrc.yml]
+    stack: node
+  pnpm:
+    label: pnpm
+    commands: [pnpm]
+    files: [pnpm-lock.yaml]
+    stack: node
+  angular-cli:
+    label: Angular CLI (ng)
+    commands: ['ng build', 'ng test', 'ng lint', 'ng e2e']
+    stack: angular
+  bower:
+    label: Bower (legacy)
+    commands: ['bower install']
+    files: [bower.json]
+  grunt:
+    label: Grunt
+    tasks: [Grunt]
+    commands: [grunt]
+    files: [Gruntfile.js, Gruntfile.coffee]
+    stack: node
+  gulp:
+    label: Gulp
+    tasks: [Gulp]
+    commands: [gulp]
+    files: [gulpfile.js, gulpfile.ts, gulpfile.babel.js]
+    stack: node
+
+  # --- Python, Go, Rust, PHP, Ruby, C/C++ -----------------------------------------------------------------------------
+  pip:
+    label: pip
+    tasks: [PipAuthenticate]
+    commands: ['pip install', 'pip3 install', 'pip wheel']
+    script_regex: 'python3?(?:\.exe)?\s+-m\s+pip\s+install'
+    stack: python
+  poetry:
+    label: Poetry
+    commands: [poetry]
+    files: [poetry.lock]
+    stack: python
+  pipenv:
+    label: Pipenv
+    commands: [pipenv]
+    files: [Pipfile.lock]
+    stack: python
+  conda:
+    label: Conda / Mamba
+    tasks: [CondaEnvironment]
+    commands: ['conda install', 'conda create', 'conda env', mamba, micromamba]
+    files: [environment.yml, environment.yaml]
+    stack: python
+  uv:
+    label: uv
+    commands: ['uv sync', 'uv pip', 'uv run', 'uv build']
+    files: [uv.lock]
+    stack: python
+  go:
+    label: Go toolchain
+    tasks: [Go, GoTool]
+    commands: ['go build', 'go test', 'go mod', 'go vet', 'go install', goreleaser]
+    stack: go
+  cargo:
+    label: Cargo
+    commands: [cargo]
+    files: [Cargo.lock]
+    stack: rust
+  composer:
+    label: Composer
+    commands: ['composer install', 'composer update']
+    files: [composer.lock]
+    stack: php
+  bundler:
+    label: Bundler / Rake
+    commands: ['bundle install', 'bundle exec', rake]
+    files: [Gemfile.lock, Rakefile]
+    stack: ruby
+  cmake:
+    label: CMake
+    tasks: [CMake]
+    commands: [cmake, ctest]
+    stack: cpp-cmake
+  make:
+    label: Make
+    commands: [make, nmake, gmake]
+    files: [Makefile, GNUmakefile]
+  bazel:
+    label: Bazel
+    commands: [bazel, bazelisk]
+    files: [WORKSPACE, WORKSPACE.bazel, MODULE.bazel, BUILD.bazel]
+
+  # --- mobile -------------------------------------------------------------------------------------------------------
+  xcodebuild:
+    label: Xcode build (macOS)
+    tasks: [Xcode]
+    commands: [xcodebuild]
+    stack: ios
+  fastlane:
+    label: fastlane
+    commands: [fastlane]
+    files: ['fastlane/Fastfile', Fastfile]
+  cocoapods:
+    label: CocoaPods
+    tasks: [CocoaPods]
+    commands: ['pod install']
+    files: [Podfile.lock]
+  flutter:
+    label: Flutter CLI
+    tasks: [FlutterBuild, FlutterInstall, FlutterTest, FlutterCommand]
+    commands: ['flutter build', 'flutter test', 'flutter pub']
+    stack: flutter
+
+  # --- containers and images ------------------------------------------------------------------------------------------
+  docker:
+    label: Docker build
+    task_inputs:
+      Docker: {command: [build, push, buildAndPush, (unset)]}
+      DockerCompose: {action: [build]}
+    commands: ['docker build', 'docker buildx', 'docker-compose build', 'docker compose build']
+    stack: container
+  buildah:
+    label: Buildah
+    commands: ['buildah bud', 'buildah build']
+    stack: container
+  podman:
+    label: Podman
+    commands: ['podman build']
+    stack: container
+  kaniko:
+    label: Kaniko
+    script_regex: '/kaniko/executor|\bexecutor\s+--context'
+    stack: container
+  jib:
+    label: Jib (Maven / Gradle plugin)
+    script_regex: 'jib:(?:build|dockerBuild|buildTar)|gradlew?(?:\.bat)?\s+(?:\S+\s+)*?jib(?:DockerBuild|BuildTar)?(?=\s|$)'
+  openshift-build:
+    label: OpenShift build (S2I / BuildConfig)
+    commands: ['oc start-build', 'oc new-build', 's2i build']
+  buildpacks:
+    label: Cloud Native Buildpacks
+    commands: ['pack build']
+    script_regex: 'spring-boot:build-image|bootBuildImage'
+  packer:
+    label: Packer
+    tasks: [PackerBuild]
+    commands: ['packer build']
+    stack: packer
+
+  # --- infrastructure ---------------------------------------------------------------------------------------------------
+  terraform:
+    label: Terraform CLI
+    tasks: [TerraformTaskV1, TerraformTaskV2, TerraformTaskV3, TerraformTaskV4, TerraformTaskV5, TerraformCLI, TerraformInstaller]
+    commands: ['terraform init', 'terraform plan', 'terraform apply', 'terraform validate', terragrunt]
+    stack: terraform
+  helm:
+    label: Helm (lint / package)
+    task_inputs:
+      HelmDeploy: {command: [package, save, push, lint, dependency, template]}
+    commands: ['helm package', 'helm lint', 'helm template', 'helm dependency', 'helm push']
+    stack: helm-charts
+
+  # --- documentation ------------------------------------------------------------------------------------------------------
+  mkdocs:
+    label: MkDocs
+    commands: ['mkdocs build', 'mkdocs gh-deploy']
+    stack: docs
+  docfx:
+    label: DocFX
+    commands: [docfx]
+    stack: docs
+  sphinx:
+    label: Sphinx
+    commands: [sphinx-build]
+    stack: docs
+  hugo:
+    label: Hugo
+    commands: [hugo]
+    stack: docs
+  jekyll:
+    label: Jekyll
+    commands: ['jekyll build']
+    stack: docs
+
+quality_tools:
+  # --- code quality and security scanners ------------------------------------------------------------------------
+  sonarqube:
+    label: SonarQube
+    tasks: [SonarQubePrepare, SonarQubeAnalyze, SonarQubePublish]
+    commands: [sonar-scanner, 'dotnet sonarscanner', dotnet-sonarscanner, SonarScanner.MSBuild]
+    script_regex: 'sonar:sonar|org\.sonarsource|gradlew?(?:\.bat)?\s+(?:\S+\s+)*?sonar(?:qube)?(?=\s|$)'
+    files: [sonar-project.properties]
+    endpoint_types: [sonarqube]
+  sonarcloud:
+    label: SonarCloud
+    tasks: [SonarCloudPrepare, SonarCloudAnalyze, SonarCloudPublish]
+    endpoint_types: [sonarcloud]
+  checkmarx:
+    label: Checkmarx
+    tasks: ['Application security testing', Checkmarx, 'Checkmarx AST', CxScan]
+    commands: ['cx scan', cxflow, runCxConsole]
+  fortify:
+    label: Fortify (SCA / ScanCentral / on Demand)
+    tasks: [FortifySCA, FortifyScanCentralSAST, FortifyScanCentralDAST, FortifyOnDemandStatic, FortifyOnDemandDynamic]
+    commands: [sourceanalyzer, scancentral, fcli, FoDUploader]
+  veracode:
+    label: Veracode
+    tasks: [Veracode, VeracodePipelineScan, 'Veracode Upload And Scan', VeracodeFlawImporter]
+    script_regex: 'pipeline-scan\.jar|veracode'
+  mend:
+    label: Mend (WhiteSource)
+    tasks: [WhiteSource, WhiteSourceBolt, Mend]
+    script_regex: 'wss-unified-agent|\bmend\s+(?:ua|sca|dep)\b|whitesource'
+  snyk:
+    label: Snyk
+    tasks: [SnykSecurityScan]
+    commands: ['snyk test', 'snyk monitor', 'snyk container', 'snyk code', 'snyk iac']
+  blackduck:
+    label: Black Duck / Synopsys Detect
+    tasks: [SynopsysDetectTask, BlackDuckDetectTask, BlackDuckSecurityScan, 'Black Duck Detect']
+    script_regex: 'synopsys-detect|\bdetect\d*\.(?:sh|ps1)\b|detect-\d[\d.]*\.jar|blackduck'
+  coverity:
+    label: Coverity
+    tasks: [SynopsysCoverity]
+    commands: [cov-build, cov-analyze, cov-capture]
+  dependency-check:
+    label: OWASP Dependency-Check
+    tasks: [dependency-check-build-task]
+    script_regex: 'dependency-check|dependencyCheckAnalyze'
+  trivy:
+    label: Trivy
+    tasks: [trivy]
+    commands: ['trivy image', 'trivy fs', 'trivy config', 'trivy repo', 'trivy k8s']
+  anchore:
+    label: Anchore (Grype / Syft)
+    commands: [grype, syft, anchore-cli]
+  aqua:
+    label: Aqua Security
+    tasks: [aquasecScanner]
+    commands: [scannercli]
+  prisma-cloud:
+    label: Prisma Cloud (twistcli)
+    tasks: [prisma-cloud-compute-scan]
+    commands: [twistcli]
+  jfrog-xray:
+    label: JFrog Xray
+    tasks: [JFrogBuildScan, ArtifactoryXrayScan, JFrogAudit]
+    commands: ['jf audit', 'jf scan', 'jf bs', 'jfrog rt bs']
+  microsoft-security:
+    label: Microsoft Security Code Analysis / Security DevOps (CredScan, BinSkim, ...)
+    tasks: [MicrosoftSecurityDevOps, CredScan, BinSkim, RoslynAnalyzers, PostAnalysis, SdtReport, PublishSecurityAnalysisLogs, AntiMalware,
+            ComponentGovernanceComponentDetection]
+  codeql:
+    label: CodeQL / Advanced Security
+    tasks: [AdvancedSecurity-Codeql-Init, AdvancedSecurity-Codeql-Autobuild, AdvancedSecurity-Codeql-Analyze, AdvancedSecurity-Dependency-Scanning]
+    commands: ['codeql database', 'codeql analyze']
+  secret-scan:
+    label: Secret scanning (gitleaks, TruffleHog, detect-secrets)
+    commands: [gitleaks, trufflehog, detect-secrets]
+    files: [.gitleaks.toml, .secrets.baseline]
+  iac-scan:
+    label: IaC scanning (Checkov, tfsec, Terrascan, KICS, TFLint)
+    commands: [checkov, tfsec, terrascan, kics, tflint]
+    files: [.tflint.hcl, .checkov.yml, .checkov.yaml]
+  zap:
+    label: OWASP ZAP (DAST)
+    tasks: [owaspzap, OWASPZAP]
+    script_regex: 'zap-(?:baseline|full-scan|api-scan)\.py|zap\.sh|owasp/zap|zaproxy'
+  code-coverage:
+    label: Code coverage report (Cobertura / JaCoCo)
+    tasks: [PublishCodeCoverageResults]
+    commands: [reportgenerator]
+
+  # --- tests -------------------------------------------------------------------------------------------------------
+  vstest:
+    label: VSTest (Windows)
+    tasks: [VSTest, VSTestPlatformInstaller, VisualStudioTestPlatformInstaller]
+    commands: [vstest.console]
+  dotnet-test:
+    label: dotnet test
+    task_inputs:
+      DotNetCoreCLI: {command: [test]}
+    commands: ['dotnet test']
+  azure-test-plans:
+    label: Azure Test Plans runs (no GitLab equivalent)
+    task_inputs:
+      VSTest: {testSelector: [testPlan]}
+  karma:
+    label: Karma (needs a headless browser)
+    files: [karma.conf.js, karma.conf.ts]
+    commands: ['karma start']
+    match:
+      - files: [angular.json]
+        content_regex: ':karma"'
+      - files: [package.json]
+        content_regex: '"karma"\s*:'
+  jest:
+    label: Jest
+    files: ['jest.config.js', 'jest.config.ts', 'jest.config.mjs', 'jest.config.cjs', 'jest.config.json']
+    commands: [jest]
+    match:
+      - files: [package.json]
+        content_regex: '"jest"\s*:'
+  vitest:
+    label: Vitest
+    files: ['vitest.config.*']
+    commands: [vitest]
+    match:
+      - files: [package.json]
+        content_regex: '"vitest"\s*:'
+  mocha:
+    label: Mocha
+    files: ['.mocharc*']
+    commands: [mocha]
+    match:
+      - files: [package.json]
+        content_regex: '"mocha"\s*:'
+  cypress:
+    label: Cypress (needs the Cypress image)
+    files: ['cypress.config.*', cypress.json]
+    commands: ['cypress run']
+    match:
+      - files: [package.json]
+        content_regex: '"cypress"\s*:'
+  playwright:
+    label: Playwright (needs the Playwright image)
+    files: ['playwright.config.*']
+    commands: ['playwright test']
+    match:
+      - files: [package.json]
+        content_regex: '"@playwright/test"\s*:'
+      - files: ['*.csproj']
+        content_regex: 'Microsoft\.Playwright'
+      - files: ['requirements*.txt', pyproject.toml]
+        content_regex: '\bplaywright\b'
+  protractor:
+    label: Protractor (deprecated end-to-end tests)
+    files: [protractor.conf.js]
+    commands: [protractor]
+    match:
+      - files: [package.json]
+        content_regex: '"protractor"\s*:'
+  selenium:
+    label: Selenium / WebDriver
+    files: ['*.csproj', pom.xml, build.gradle, build.gradle.kts, 'requirements*.txt', pyproject.toml, package.json]
+    content_regex: 'selenium'
+  pytest:
+    label: pytest
+    files: [pytest.ini, conftest.py]
+    commands: [pytest, py.test]
+    match:
+      - files: [pyproject.toml, setup.cfg, tox.ini]
+        content_regex: '\[tool\.pytest|\[pytest\]|\[tool:pytest\]'
+  newman:
+    label: Postman / Newman API tests
+    tasks: [NewmanPostman, newman]
+    files: ['*.postman_collection.json']
+    commands: ['newman run']
+  jmeter:
+    label: JMeter load tests
+    tasks: [JMeter, JMeterInstaller, Taurus]
+    files: ['*.jmx']
+    commands: [jmeter]
+  k6:
+    label: k6 load tests
+    tasks: [k6-load-test]
+    commands: ['k6 run']
+  gatling:
+    label: Gatling load tests
+    script_regex: 'gatling'
+    match:
+      - files: [pom.xml, build.gradle, build.gradle.kts, build.sbt]
+        content_regex: 'gatling'
+  app-center-test:
+    label: App Center Test (retired)
+    tasks: [AppCenterTest]
 
 deploy_targets:
+  # --- containers and Kubernetes ------------------------------------------------------------------------------------
   openshift:
+    label: OpenShift
     tasks: [oc-cmd, oc-setup, oc-conditional-cmd, config-map]
     endpoint_types: [openshift]
-    script_regex: '\boc\s+(apply|rollout|process|new-app|start-build|login|set|replace|create)\b'
+    commands: ['oc apply', 'oc rollout', 'oc process', 'oc new-app', 'oc set', 'oc replace', 'oc create', 'oc tag', 'oc import-image',
+               'oc patch', 'oc login']
   kubernetes:
-    tasks: [KubernetesManifest, Kubernetes, HelmDeploy]
+    label: Kubernetes (kubectl / Helm / Kustomize)
+    tasks: [KubernetesManifest, Kubernetes]
+    task_inputs:
+      HelmDeploy: {command: [install, upgrade, rollback, delete, uninstall]}
     endpoint_types: [kubernetes]
-    script_regex: '\b(kubectl\s+(apply|rollout|set|replace|create)|helm\s+(upgrade|install))\b'
+    commands: ['kubectl apply', 'kubectl rollout', 'kubectl set image', 'kubectl replace', 'kubectl create', 'kubectl patch', 'kubectl delete',
+               'helm upgrade', 'helm install', 'helm rollback', 'helm uninstall', 'kustomize build', helmfile]
+  gitops:
+    label: GitOps (Argo CD / Flux)
+    commands: [argocd, 'flux reconcile', 'flux create', 'kustomize edit set image']
+  docker-host:
+    label: Docker host / Swarm
+    commands: ['docker stack deploy', 'docker context use']
+    script_regex: 'DOCKER_HOST=|docker(?:-compose)?\s+(?:-H|--host)\s'
+
+  # --- Windows and on-premises servers ---------------------------------------------------------------------------
   iis:
-    tasks: [IISWebAppDeploymentOnMachineGroup, IISWebAppManagementOnMachineGroup, IISWebAppDeployment]
+    label: IIS (Web Deploy / IIS tasks)
+    tasks: [IISWebAppDeploymentOnMachineGroup, IISWebAppManagementOnMachineGroup, IISWebAppDeployment, IISWebAppMgmt]
+    commands: [msdeploy, appcmd, New-WebSite, New-WebAppPool, Stop-WebAppPool, Start-WebAppPool, Restart-WebAppPool, Stop-WebSite, Start-WebSite]
+    script_regex: 'WebAdministration|IIS:\\'
+  windows-service:
+    label: Windows service
+    commands: ['sc create', 'sc config', 'sc start', 'sc stop', 'sc delete', New-Service, Start-Service, Stop-Service, Restart-Service,
+               Set-Service, Remove-Service, nssm, InstallUtil]
   windows-vm:
-    tasks: [PowerShellOnTargetMachines, WindowsMachineFileCopy, SqlDacpacDeploymentOnMachineGroup]
+    label: Windows servers over WinRM / remote file copy
+    tasks: [PowerShellOnTargetMachines, WindowsMachineFileCopy]
+    script_regex: 'Invoke-Command\s+[^\n]*-ComputerName|New-PSSession|Enter-PSSession|-ToSession\b'
+  deployment-group:
+    label: Deployment group agents on the target servers
     deployment_group: true
   linux-vm:
+    label: Linux servers over SSH
     tasks: [SSH, CopyFilesOverSSH]
     endpoint_types: [ssh]
-  azure-app-service:
-    tasks: [AzureRmWebAppDeployment, AzureWebApp, AzureFunctionApp]
-  azure-infra:
-    tasks: [AzureResourceManagerTemplateDeployment, AzureResourceGroupDeployment]
-  terraform:
-    tasks: [TerraformTaskV4, TerraformTaskV3, TerraformCLI]
-    script_regex: '\bterraform\s+apply\b'
-  ansible:
-    tasks: [Ansible]
-    script_regex: '\bansible-playbook\b'
+    commands: [scp, rsync, sshpass]
+    script_regex: '\bssh\s+(?:-\S+\s+)*[\w.-]+@[\w.-]+'
+  file-share:
+    label: Windows file share (UNC path)
+    script_regex: '(?:^|[\s"''=])\\\\[\w.$-]+\\[\w.$-]+'
+  ftp:
+    label: FTP / SFTP upload
+    tasks: [FtpUpload]
+    commands: [lftp, sftp, winscp]
+    script_regex: 'ftps?://'
+  tomcat:
+    label: Apache Tomcat
+    script_regex: '/manager/(?:text/)?deploy|catalina\.(?:sh|bat)|tomcat-manager|(?:cargo|tomcat7?):(?:deploy|redeploy)'
+  jboss-wildfly:
+    label: JBoss EAP / WildFly
+    commands: [jboss-cli]
+    script_regex: 'wildfly:deploy|standalone\.(?:sh|bat)'
+  weblogic:
+    label: WebLogic
+    script_regex: 'weblogic\.Deployer|\bwlst(?:\.sh|\.cmd)?\b|weblogic-maven-plugin'
+  websphere:
+    label: WebSphere
+    script_regex: '\bwsadmin(?:\.sh|\.bat)?\b|was-maven-plugin|websphere'
+  service-fabric:
+    label: Service Fabric
+    tasks: [ServiceFabricDeploy, ServiceFabricComposeDeploy, ServiceFabricPowerShell]
+    endpoint_types: [servicefabric]
 
-artifact_rules:   # first match wins
-  - id: image
-    tasks: [Docker, DockerCompose]
+  # --- databases, data and business apps ----------------------------------------------------------------------------
+  database:
+    label: Database deployment (DACPAC, SQL scripts, Flyway, Liquibase, migrations)
+    tasks: [SqlAzureDacpacDeployment, SqlDacpacDeploymentOnMachineGroup, SqlServerDacpacDeployment, MysqlDeploymentOnMachineGroup,
+            AzureMysqlDeployment]
+    commands: [sqlpackage, sqlcmd, Invoke-Sqlcmd, 'flyway migrate', 'flyway repair', 'flyway baseline', 'liquibase update', 'liquibase rollback',
+               'dotnet ef database update', 'alembic upgrade', 'manage.py migrate', 'rails db:migrate', 'rake db:migrate', dbmate, psql, mysql]
+  ssis-catalog:
+    label: SSIS catalog
+    tasks: [SSISDeploy]
+    commands: [ISDeploymentWizard]
+  ssrs-server:
+    label: SSRS report server
+    script_regex: 'ReportingServicesTools|Write-RsCatalogItem|Write-RsFolderContent|Publish-RsProject'
+  power-bi:
+    label: Power BI service
+    tasks: [PowerBIActions]
+    script_regex: 'MicrosoftPowerBIMgmt|Connect-PowerBIServiceAccount|New-PowerBIReport'
+  power-platform:
+    label: Power Platform environment
+    tasks: [PowerPlatformImportSolution, PowerPlatformDeployPackage, PowerPlatformPublishCustomizations, PowerPlatformApplySolutionUpgrade]
+    commands: ['pac solution import', 'pac package deploy']
+  salesforce:
+    label: Salesforce org
+    commands: ['sfdx force:source:deploy', 'sfdx force:mdapi:deploy', 'sf project deploy', 'sf deploy']
+  databricks:
+    label: Databricks workspace
+    commands: ['databricks workspace', 'databricks jobs', 'databricks bundle', 'databricks fs', 'databricks repos']
+
+  # --- Azure ----------------------------------------------------------------------------------------------------------
+  azure-app-service:
+    label: Azure App Service
+    tasks: [AzureRmWebAppDeployment, AzureWebApp, AzureWebAppContainer, AzureAppServiceManage, AzureAppServiceSettings]
+    commands: ['az webapp']
+    replaces: [azure]
+  azure-functions:
+    label: Azure Functions
+    tasks: [AzureFunctionApp, AzureFunctionAppContainer, AzureFunctionOnKubernetes]
+    commands: ['func azure functionapp publish', 'az functionapp']
+    replaces: [azure]
+  azure-container-apps:
+    label: Azure Container Apps
+    tasks: [AzureContainerApps]
+    commands: ['az containerapp']
+    replaces: [azure]
+  azure-static-web-apps:
+    label: Azure Static Web Apps
+    tasks: [AzureStaticWebApp]
+    commands: ['swa deploy', 'az staticwebapp']
+    replaces: [azure]
+  azure-storage:
+    label: Azure Storage (blob / file copy)
+    tasks: [AzureFileCopy]
+    commands: [azcopy, 'az storage blob upload', 'az storage blob upload-batch', 'az storage blob sync', 'az storage file upload']
+    replaces: [azure]
+  azure-infra:
+    label: Azure ARM / Bicep deployment
+    tasks: [AzureResourceManagerTemplateDeployment, AzureResourceGroupDeployment]
+    commands: ['az deployment', 'az group deployment', New-AzResourceGroupDeployment, New-AzDeployment, 'az bicep']
+    replaces: [azure]
+  azure-vm:
+    label: Azure VM / scale set
+    tasks: [AzureVmssDeployment]
+    commands: ['az vmss', 'az vm run-command']
+    replaces: [azure]
+  azure-cloud-services:
+    label: Azure Cloud Services (classic)
+    tasks: [AzureCloudPowerShellDeployment]
+    replaces: [azure]
+  azure-spring-apps:
+    label: Azure Spring Apps
+    tasks: [AzureSpringCloud]
+    commands: ['az spring']
+    replaces: [azure]
+  azure:
+    label: Azure (CLI / PowerShell scripts)
+    tasks: [AzureCLI, AzurePowerShell]
+
+  # --- AWS and Google Cloud ------------------------------------------------------------------------------------------
+  aws-s3:
+    label: AWS S3
+    tasks: [S3Upload]
+    commands: ['aws s3']
+    replaces: [aws]
+  aws-lambda:
+    label: AWS Lambda / SAM / Serverless
+    tasks: [LambdaDeployFunction, LambdaNETCoreDeploy]
+    commands: ['aws lambda', 'sam deploy', 'serverless deploy', 'sls deploy']
+    replaces: [aws]
+  aws-ecs:
+    label: AWS ECS
+    commands: ['aws ecs', ecs-cli]
+    replaces: [aws]
+  aws-cloudformation:
+    label: AWS CloudFormation / CDK
+    tasks: [CloudFormationCreateOrUpdateStack, CloudFormationExecuteChangeSet, CloudFormationDeleteStack]
+    commands: ['aws cloudformation', 'cdk deploy']
+    replaces: [aws]
+  aws-codedeploy:
+    label: AWS CodeDeploy
+    tasks: [CodeDeployDeployApplication]
+    commands: ['aws deploy']
+    replaces: [aws]
+  aws-beanstalk:
+    label: AWS Elastic Beanstalk
+    tasks: [BeanstalkDeployApplication, BeanstalkCreateApplicationVersion]
+    commands: ['aws elasticbeanstalk', 'eb deploy']
+    replaces: [aws]
+  aws:
+    label: AWS (CLI / tools)
+    tasks: [AWSCLI, AWSShellScript, AWSPowerShellModuleScript, SystemsManagerRunCommand]
+    endpoint_types: [aws]
+    commands: [aws]
+  gcp:
+    label: Google Cloud
+    commands: ['gcloud app', 'gcloud run', 'gcloud functions', 'gcloud container', 'gcloud compute', 'gcloud deploy', gsutil]
+  cloud-foundry:
+    label: Cloud Foundry
+    tasks: [CloudFoundry, CloudFoundryCLI]
+    commands: ['cf push', 'cf bgd', 'cf blue-green-deploy', 'cf zero-downtime-push']
+
+  # --- infrastructure as code and configuration management ---------------------------------------------------------------
+  terraform:
+    label: Terraform apply
+    task_inputs:
+      TerraformTaskV1: {command: [apply, destroy]}
+      TerraformTaskV2: {command: [apply, destroy]}
+      TerraformTaskV3: {command: [apply, destroy]}
+      TerraformTaskV4: {command: [apply, destroy]}
+      TerraformTaskV5: {command: [apply, destroy]}
+      TerraformCLI: {command: [apply, destroy]}
+    commands: ['terraform apply', 'terraform destroy', 'terragrunt apply', 'terragrunt run-all']
+  pulumi:
+    label: Pulumi
+    tasks: [Pulumi]
+    commands: ['pulumi up', 'pulumi destroy']
+  ansible:
+    label: Ansible (playbooks, AWX / Tower)
+    tasks: [Ansible]
+    commands: [ansible-playbook, ansible, 'awx job_templates', tower-cli]
+  chef:
+    label: Chef
+    tasks: [Chef, ChefKnife]
+    commands: [knife, chef-client]
+  puppet:
+    label: Puppet
+    commands: ['puppet apply', 'puppet agent', r10k, bolt]
+
+  # --- release orchestrators and other CI ---------------------------------------------------------------------------------
+  octopus:
+    label: Octopus Deploy
+    tasks: [OctopusCreateRelease, OctopusDeployRelease, OctopusPromote, OctopusPush, OctopusPack, OctopusMetadata, OctopusBuildInformation,
+            OctopusRunRunbook, OctoInstaller]
+    endpoint_types: [octopusendpoint]
+    commands: ['octo create-release', 'octo deploy-release', 'octo push', 'octo pack', 'octopus release', 'octopus package']
+  urbancode:
+    label: UrbanCode Deploy
+    commands: [udclient]
+  xl-deploy:
+    label: Digital.ai (XebiaLabs) Deploy
+    tasks: [XLDeploy]
+    commands: [xld, xlw]
+  jenkins:
+    label: Jenkins jobs (queued from Azure DevOps)
+    tasks: [JenkinsQueueJob, JenkinsDownloadArtifacts]
+    endpoint_types: [jenkins]
+
+  # --- mobile and desktop stores --------------------------------------------------------------------------------------------
+  app-center:
+    label: App Center distribution (retired March 2025)
+    tasks: [AppCenterDistribute, HockeyApp]
+    commands: ['appcenter distribute']
+  app-store:
+    label: Apple App Store / TestFlight
+    tasks: [AppStoreRelease, AppStorePromote]
+    commands: ['fastlane deliver', 'fastlane pilot', 'fastlane upload_to_testflight', 'fastlane upload_to_app_store', altool]
+  google-play:
+    label: Google Play
+    tasks: [GooglePlayRelease, GooglePlayPromote, GooglePlayIncreaseRollout, GooglePlayReleaseBundle, GooglePlayStatusUpdate]
+    commands: ['fastlane supply', 'fastlane upload_to_play_store']
+  firebase:
+    label: Firebase (App Distribution / Hosting)
+    commands: ['firebase appdistribution', 'firebase deploy']
+  microsoft-store:
+    label: Microsoft Store
+    tasks: [store-publish, store-flight]
+
+artifacts:
+  image:
+    label: Container image
+    task_inputs:
+      Docker: {command: [build, push, buildAndPush, (unset)]}
+      DockerCompose: {action: [build, push]}
+    tasks: [ECRPushImage]
     markers: [docker]
-    script_regex: '\b(docker|podman|buildah)\s+(build|push)\b'
-  - id: package
+    commands: ['docker build', 'docker push', 'docker buildx', 'podman build', 'podman push', 'buildah bud', 'buildah build', 'buildah push',
+               'az acr build', 'oc start-build', 'pack build', 's2i build', 'skopeo copy', 'crane push']
+    script_regex: '/kaniko/executor|jib:(?:build|dockerBuild)|bootBuildImage|spring-boot:build-image'
+  helm-chart:
+    label: Helm chart (packaged / pushed)
+    task_inputs:
+      HelmDeploy: {command: [package, save, push]}
+    commands: ['helm package', 'helm push', 'helm cm-push', 'helm chart save', 'helm chart push']
+  maven-package:
+    label: Maven / Gradle package deployed to a Maven repository
+    task_inputs:
+      Maven: {goals: [deploy, 'deploy:deploy-file', 'release:perform']}
+      Gradle: {tasks: [publish, uploadArchives, artifactoryPublish]}
+    script_regex: '\bmvnw?(?:\.cmd)?\s+(?:[^\n;&|]*\s)?deploy(?::deploy(?:-file)?)?(?=\s|$)|\bgradlew?(?:\.bat)?\s+(?:[^\n;&|]*\s)?(?:publish(?!ToMavenLocal)\w*|uploadArchives|artifactoryPublish)(?=\s|$)'
+  nuget-package:
+    label: NuGet package
     task_inputs:
       NuGetCommand: {command: [pack, push]}
       DotNetCoreCLI: {command: [pack, push]}
+    tasks: [NuGetPackager, NuGetPublisher]
+    commands: ['nuget pack', 'nuget push', 'dotnet pack', 'dotnet nuget push']
+  npm-package:
+    label: npm package
+    task_inputs:
       Npm: {command: [publish]}
-      Maven: {goals: [deploy]}
+    commands: ['npm publish', 'yarn publish', 'pnpm publish', 'yarn npm publish']
+  python-package:
+    label: Python package (wheel / sdist)
+    tasks: [TwineAuthenticate]
+    commands: ['twine upload', 'poetry publish', 'poetry build', 'flit publish', 'uv publish', 'uv build', 'hatch publish', 'hatch build']
+    script_regex: 'python3?(?:\.exe)?\s+-m\s+build\b|setup\.py\s+(?:sdist|bdist_wheel)'
+  universal-package:
+    label: Universal package (Azure Artifacts)
+    task_inputs:
       UniversalPackages: {command: [publish]}
-  - id: chart
-    markers: [helm]
-  - id: files
+    commands: ['az artifacts universal publish']
+  generic-upload:
+    label: Generic upload to Artifactory / Nexus
+    tasks: [ArtifactoryGenericUpload]
+    task_inputs:
+      JFrogGenericArtifacts: {command: [upload]}
+    commands: ['jf rt upload', 'jf rt u', 'jfrog rt upload', 'jfrog rt u']
+    script_regex: 'curl\s[^\n]*(?:\s-T|--upload-file)\s'
+  chocolatey-package:
+    label: Chocolatey package
+    commands: ['choco pack', 'choco push']
+  symbols:
+    label: Debug symbols (symbol server)
+    tasks: [PublishSymbols]
+  mobile-app:
+    label: Mobile app package (APK / AAB / IPA)
+    tasks: [AndroidSigning, XamarinAndroid, XamariniOS]
+    task_inputs:
+      Xcode: {packageApp: ['true']}
+    commands: ['flutter build apk', 'flutter build appbundle', 'flutter build ipa', 'fastlane gym', 'fastlane build_app']
+    script_regex: '\bassemble(?:Release|Debug)\b|\bbundleRelease\b|-exportArchive'
+  installer:
+    label: Windows installer (MSI / MSIX / setup.exe)
+    files: ['*.wixproj', '*.wxs', '*.vdproj', '*.iss', '*.nsi', '*.aip', '*.wapproj']
+    script_regex: '\b(?:candle|light)\.exe\b|\bwix\s+build\b|\bmakensis\b|\biscc(?:\.exe)?\b|\bmakeappx(?:\.exe)?\b'
+  dacpac:
+    label: Database package (DACPAC / BACPAC)
+    files: ['*.sqlproj']
+    script_regex: '\.[db]acpac\b|/Action:(?:Extract|Export)'
+  vm-image:
+    label: VM image (Packer)
+    tasks: [PackerBuild]
+    commands: ['packer build']
+  files:
+    label: Build artifacts (zip / drop folder)
     tasks: [PublishBuildArtifacts, PublishPipelineArtifact, ArchiveFiles, publish]
+    script_regex: '##vso\[artifact\.upload'
 
-named:   # first match wins; any field may be omitted. deploy matches if the target is present.
+# Named archetypes: a friendly name and a proposed shared GitLab template.
+#
+# Keys: name, template, and the conditions stack / build / quality / deploy / artifact / marker. A condition is one id or a
+# list of ids; every listed id must be present. `none` means that dimension is empty (e.g. deploy: none). `stack` is required.
+# Selection, for each repo:
+#   1. Keep the entries whose conditions all match.
+#   2. Rank them: entries naming more stacks first, then entries with more conditions, then the order in this list.
+#   3. Take entries in that order, skipping an entry if one of its stacks is already named.
+#   `also_covers: [ids]`: when this entry matches, the entries with only `stack:` for those stacks are not used
+#   (e.g. React Native covers android and ios, .NET MAUI covers dotnet). More specific entries for them still apply.
+# A repo with several stacks gets several names and templates, joined with ", ". No match at all gives "custom".
+# Every stack has an entry with only `stack:`, so every combination gets a name. Add your own entries for the combinations
+# you build templates for (the Archetypes sheet lists every combination found).
+named:
+  # --- full-stack combinations: one template builds both parts ---------------------------------------------------------
+  - {name: "ASP.NET Core + Angular", template: dotnet-angular, stack: [dotnet, angular]}
+  - {name: "ASP.NET Core + React", template: dotnet-react, stack: [dotnet, react]}
+  - {name: "ASP.NET Core + Vue", template: dotnet-vue, stack: [dotnet, vue]}
+  - {name: "ASP.NET (.NET Framework) + Angular", template: dotnet-framework-angular, stack: [dotnet-framework, angular]}
+  - {name: "ASP.NET (.NET Framework) + AngularJS", template: dotnet-framework-angularjs, stack: [dotnet-framework, angularjs]}
+  - {name: "ASP.NET (.NET Framework) + React", template: dotnet-framework-react, stack: [dotnet-framework, react]}
+  - {name: "Java/Maven + Angular", template: java-maven-angular, stack: [java-maven, angular]}
+  - {name: "Java/Maven + React", template: java-maven-react, stack: [java-maven, react]}
+  - {name: "Java/Maven + Vue", template: java-maven-vue, stack: [java-maven, vue]}
+  - {name: "Java/Gradle + Angular", template: java-gradle-angular, stack: [java-gradle, angular]}
+  - {name: "Java/Gradle + React", template: java-gradle-react, stack: [java-gradle, react]}
+  - {name: "Python + React", template: python-react, stack: [python, react]}
+  - {name: "Python + Angular", template: python-angular, stack: [python, angular]}
+  - {name: "Ionic / Capacitor + Angular app", template: ionic-angular, stack: [hybrid-mobile, angular], also_covers: [android, ios]}
+
+  # --- .NET Framework ------------------------------------------------------------------------------------------------
+  - {name: ".NET Framework -> IIS (Windows)", template: dotnet-framework-iis, stack: dotnet-framework, deploy: iis}
+  - {name: ".NET Framework -> Windows service", template: dotnet-framework-winservice, stack: dotnet-framework, deploy: windows-service}
+  - {name: ".NET Framework -> Azure App Service", template: dotnet-framework-appservice, stack: dotnet-framework, deploy: azure-app-service}
+  - {name: ".NET Framework -> Service Fabric", template: dotnet-service-fabric, stack: dotnet-framework, deploy: service-fabric}
+  - {name: ".NET Framework -> Octopus Deploy", template: dotnet-framework-octopus, stack: dotnet-framework, deploy: octopus}
+  - {name: ".NET Framework library (NuGet)", template: dotnet-framework-nuget, stack: dotnet-framework, artifact: nuget-package}
+  - {name: ".NET Framework app (installer)", template: dotnet-framework-installer, stack: dotnet-framework, artifact: installer}
+  - {name: ".NET Framework build (Windows)", template: dotnet-framework-build, stack: dotnet-framework}
+
+  # --- .NET -----------------------------------------------------------------------------------------------------------
+  - {name: ".NET -> container -> OpenShift", template: dotnet-openshift, stack: dotnet, artifact: image, deploy: openshift}
+  - {name: ".NET -> container -> Kubernetes", template: dotnet-k8s, stack: dotnet, artifact: image, deploy: kubernetes}
+  - {name: ".NET -> container", template: dotnet-container, stack: dotnet, artifact: image}
+  - {name: ".NET -> Azure App Service", template: dotnet-appservice, stack: dotnet, deploy: azure-app-service}
+  - {name: ".NET -> Azure Functions", template: dotnet-functions, stack: dotnet, deploy: azure-functions}
+  - {name: ".NET -> IIS", template: dotnet-iis, stack: dotnet, deploy: iis}
+  - {name: ".NET -> Windows service", template: dotnet-winservice, stack: dotnet, deploy: windows-service}
+  - {name: ".NET -> Linux VM (SSH)", template: dotnet-vm, stack: dotnet, deploy: linux-vm}
+  - {name: ".NET -> Service Fabric", template: dotnet-service-fabric, stack: dotnet, deploy: service-fabric}
+  - {name: ".NET -> Octopus Deploy", template: dotnet-octopus, stack: dotnet, deploy: octopus}
+  - {name: ".NET package/library", template: dotnet-package, stack: dotnet, artifact: nuget-package}
+  - {name: ".NET build", template: dotnet-build, stack: dotnet}
+  - {name: ".NET project (framework not detected)", template: dotnet-build, stack: dotnet-project}
+  - {name: "WPF / WinForms desktop app (Windows)", template: dotnet-desktop, stack: dotnet-desktop, also_covers: [dotnet]}
+  - {name: "UWP / WinUI / MSIX app (Windows)", template: windows-app, stack: windows-app, also_covers: [dotnet]}
+  - {name: "Xamarin app (end of support: move to .NET MAUI)", template: xamarin, stack: xamarin, also_covers: [dotnet]}
+  - {name: ".NET MAUI app", template: dotnet-maui, stack: maui, also_covers: [dotnet]}
+
+  # --- Java and Scala -------------------------------------------------------------------------------------------------
   - {name: "Java/Maven -> container -> OpenShift", template: java-maven-openshift, stack: java-maven, artifact: image, deploy: openshift}
   - {name: "Java/Maven -> container -> Kubernetes", template: java-maven-k8s, stack: java-maven, artifact: image, deploy: kubernetes}
+  - {name: "Java/Maven -> container", template: java-maven-container, stack: java-maven, artifact: image}
+  - {name: "Java/Maven -> Tomcat", template: java-maven-tomcat, stack: java-maven, deploy: tomcat}
+  - {name: "Java/Maven -> JBoss / WildFly", template: java-maven-jboss, stack: java-maven, deploy: jboss-wildfly}
+  - {name: "Java/Maven -> WebLogic", template: java-maven-weblogic, stack: java-maven, deploy: weblogic}
+  - {name: "Java/Maven -> WebSphere", template: java-maven-websphere, stack: java-maven, deploy: websphere}
+  - {name: "Java/Maven -> Linux VM (SSH)", template: java-maven-vm, stack: java-maven, deploy: linux-vm}
+  - {name: "Java/Maven -> Azure App Service", template: java-maven-appservice, stack: java-maven, deploy: azure-app-service}
+  - {name: "Java/Maven library (Maven repository)", template: java-maven-library, stack: java-maven, artifact: maven-package}
   - {name: "Java/Maven library or app (no deploy)", template: java-maven-build, stack: java-maven, deploy: none}
-  - {name: ".NET Framework -> IIS (Windows)", template: dotnet-framework-iis, stack: dotnet-framework, deploy: iis}
-  - {name: ".NET Framework build (Windows)", template: dotnet-framework-build, stack: dotnet-framework}
-  - {name: ".NET -> container", template: dotnet-container, stack: dotnet, artifact: image}
-  - {name: ".NET package/library", template: dotnet-package, stack: dotnet, artifact: package}
-  - {name: "Node -> container", template: node-container, stack: node, artifact: image}
-  - {name: "Node build/publish", template: node-build, stack: node}
+  - {name: "Java/Maven", template: java-maven-build, stack: java-maven}
+  - {name: "Java/Gradle -> container -> OpenShift", template: java-gradle-openshift, stack: java-gradle, artifact: image, deploy: openshift}
+  - {name: "Java/Gradle -> container -> Kubernetes", template: java-gradle-k8s, stack: java-gradle, artifact: image, deploy: kubernetes}
+  - {name: "Java/Gradle -> container", template: java-gradle-container, stack: java-gradle, artifact: image}
+  - {name: "Java/Gradle library (Maven repository)", template: java-gradle-library, stack: java-gradle, artifact: maven-package}
+  - {name: "Java/Gradle library or app (no deploy)", template: java-gradle-build, stack: java-gradle, deploy: none}
+  - {name: "Java/Gradle", template: java-gradle-build, stack: java-gradle}
+  - {name: "Java/Ant (legacy build)", template: java-ant, stack: java-ant}
+  - {name: "Scala/sbt", template: scala-sbt, stack: scala-sbt}
+
+  # --- Python, Go, Rust, PHP, Ruby, C/C++, R -----------------------------------------------------------------------------
+  - {name: "Python -> container -> Kubernetes", template: python-k8s, stack: python, artifact: image, deploy: kubernetes}
+  - {name: "Python -> container", template: python-container, stack: python, artifact: image}
+  - {name: "Python -> Azure Functions", template: python-functions, stack: python, deploy: azure-functions}
+  - {name: "Python -> Azure App Service", template: python-appservice, stack: python, deploy: azure-app-service}
+  - {name: "Python package (PyPI)", template: python-package, stack: python, artifact: python-package}
   - {name: "Python", template: python, stack: python}
+  - {name: "Go -> container", template: go-container, stack: go, artifact: image}
+  - {name: "Go", template: go, stack: go}
+  - {name: "Rust", template: rust, stack: rust}
+  - {name: "PHP -> container", template: php-container, stack: php, artifact: image}
+  - {name: "PHP", template: php, stack: php}
+  - {name: "Ruby", template: ruby, stack: ruby}
+  - {name: "C / C++ (Visual Studio, Windows)", template: cpp-msvc, stack: cpp-msvc}
+  - {name: "C / C++ (CMake)", template: cpp-cmake, stack: cpp-cmake}
+  - {name: "C / C++", template: c-cpp, stack: c-cpp}
+  - {name: "R", template: r, stack: r}
+
+  # --- front-end -----------------------------------------------------------------------------------------------------
+  - {name: "Angular SPA -> container -> Kubernetes", template: angular-k8s, stack: angular, artifact: image, deploy: kubernetes}
+  - {name: "Angular SPA -> container -> OpenShift", template: angular-openshift, stack: angular, artifact: image, deploy: openshift}
+  - {name: "Angular SPA -> container (nginx)", template: angular-container, stack: angular, artifact: image}
+  - {name: "Angular SPA -> IIS", template: angular-iis, stack: angular, deploy: iis}
+  - {name: "Angular SPA -> Azure Static Web Apps", template: angular-static-web-app, stack: angular, deploy: azure-static-web-apps}
+  - {name: "Angular SPA -> Azure Storage", template: angular-azure-storage, stack: angular, deploy: azure-storage}
+  - {name: "Angular SPA -> Azure App Service", template: angular-appservice, stack: angular, deploy: azure-app-service}
+  - {name: "Angular library (npm package)", template: angular-library, stack: angular, artifact: npm-package}
+  - {name: "Angular SPA (static files)", template: angular-build, stack: angular}
+  - {name: "AngularJS 1.x app (legacy)", template: angularjs, stack: angularjs}
+  - {name: "React SPA -> container", template: react-container, stack: react, artifact: image}
+  - {name: "React SPA -> IIS", template: react-iis, stack: react, deploy: iis}
+  - {name: "React SPA -> Azure Static Web Apps", template: react-static-web-app, stack: react, deploy: azure-static-web-apps}
+  - {name: "React library (npm package)", template: react-library, stack: react, artifact: npm-package}
+  - {name: "React SPA (static files)", template: react-build, stack: react}
+  - {name: "Next.js -> container", template: nextjs-container, stack: nextjs, artifact: image}
+  - {name: "Next.js", template: nextjs, stack: nextjs}
+  - {name: "Gatsby site", template: gatsby, stack: gatsby}
+  - {name: "Vue SPA -> container", template: vue-container, stack: vue, artifact: image}
+  - {name: "Vue SPA (static files)", template: vue-build, stack: vue}
+  - {name: "Nuxt", template: nuxt, stack: nuxt}
+  - {name: "Svelte / SvelteKit", template: svelte, stack: svelte}
+  - {name: "Electron desktop app", template: electron, stack: electron}
+  - {name: "SharePoint Framework (SPFx) solution", template: spfx, stack: spfx}
+
+  # --- Node.js ----------------------------------------------------------------------------------------------------------
+  - {name: "Node -> container -> Kubernetes", template: node-k8s, stack: node, artifact: image, deploy: kubernetes}
+  - {name: "Node -> container -> OpenShift", template: node-openshift, stack: node, artifact: image, deploy: openshift}
+  - {name: "Node -> container", template: node-container, stack: node, artifact: image}
+  - {name: "Node -> Azure Functions", template: node-functions, stack: node, deploy: azure-functions}
+  - {name: "Node -> Azure App Service", template: node-appservice, stack: node, deploy: azure-app-service}
+  - {name: "Node package (npm)", template: node-package, stack: node, artifact: npm-package}
+  - {name: "Node build/publish", template: node-build, stack: node}
+
+  # --- mobile ---------------------------------------------------------------------------------------------------------------
+  - {name: "React Native app", template: react-native, stack: react-native, also_covers: [android, ios]}
+  - {name: "Ionic / Capacitor / Cordova app", template: hybrid-mobile, stack: hybrid-mobile, also_covers: [android, ios]}
+  - {name: "Flutter app", template: flutter, stack: flutter, also_covers: [android, ios]}
+  - {name: "Android app", template: android, stack: android}
+  - {name: "iOS / macOS app (macOS runner)", template: ios, stack: ios}
+
+  # --- databases, data, BI and business platforms -------------------------------------------------------------------------
+  - {name: "Database project -> deployment", template: database-deploy, stack: database, deploy: database}
+  - {name: "Database project", template: database, stack: database}
+  - {name: "SSIS packages (Windows)", template: ssis, stack: ssis}
+  - {name: "SSRS reports (Windows)", template: ssrs, stack: ssrs}
+  - {name: "SSAS model (Windows)", template: ssas, stack: ssas}
+  - {name: "Power BI reports", template: power-bi, stack: power-bi}
+  - {name: "Azure Data Factory", template: azure-data-factory, stack: azure-data-factory}
+  - {name: "Databricks asset bundle", template: databricks, stack: databricks}
+  - {name: "dbt project", template: dbt, stack: dbt}
+  - {name: "Power Platform solution", template: power-platform, stack: power-platform}
+  - {name: "Salesforce (SFDX)", template: salesforce, stack: salesforce}
+  - {name: "BizTalk (Windows)", template: biztalk, stack: biztalk}
+  - {name: "Delphi (Windows)", template: delphi, stack: delphi}
+  - {name: "Visual Basic 6 (Windows)", template: vb6, stack: vb6}
+
+  # --- infrastructure as code ------------------------------------------------------------------------------------------------
   - {name: "Terraform / IaC", template: terraform, stack: terraform}
+  - {name: "Bicep", template: bicep, stack: bicep}
+  - {name: "ARM templates", template: arm-templates, stack: arm-templates}
+  - {name: "AWS CloudFormation / SAM", template: cloudformation, stack: cloudformation}
+  - {name: "AWS CDK", template: aws-cdk, stack: aws-cdk}
+  - {name: "Pulumi", template: pulumi, stack: pulumi}
   - {name: "Ansible", template: ansible, stack: ansible}
+  - {name: "Chef", template: chef, stack: chef}
+  - {name: "Puppet", template: puppet, stack: puppet}
+  - {name: "Packer (VM images)", template: packer, stack: packer}
+  - {name: "PowerShell module", template: powershell-module, stack: powershell}
+  - {name: "Documentation site (GitLab Pages)", template: docs-pages, stack: docs}
+
+  # --- fallbacks and the tool-assigned stack -----------------------------------------------------------------------------------
+  - {name: "Helm charts", template: helm-chart, stack: helm-charts}
+  - {name: "Kubernetes / OpenShift manifests", template: k8s-manifests, stack: kubernetes-manifests}
+  - {name: "Container image (Dockerfile only)", template: container-image, stack: container}
+  - {name: "SQL scripts", template: sql-scripts, stack: sql-scripts}
+  - {name: "Scripts only", template: scripts, stack: scripts}
+  - {name: "AZDO YAML template repository", template: gitlab-ci-components, stack: azdo-yaml-templates}

@@ -21,7 +21,7 @@ from azdo_analyzer.analyze.activity import (
     recommendation,
     repo_activity,
 )
-from azdo_analyzer.analyze.archetype import RepoProfile, clone_clusters, fingerprint, profile_repo
+from azdo_analyzer.analyze.archetype import DIMENSIONS, RepoProfile, clone_clusters, fingerprint, mark_template_repo, profile_repo
 from azdo_analyzer.analyze.facts import PipelineFacts, compute_facts, windows_pool_names
 from azdo_analyzer.analyze.findings import Finding, make, pipeline_findings, project_findings, repo_findings, variable_issues
 from azdo_analyzer.analyze.rows import (
@@ -147,6 +147,7 @@ class AnalysisResult:
     clones: list[dict]
     agents: list[dict]
     coverage: list[dict]
+    components: list[dict] = field(default_factory=list)
 
     def all_findings(self) -> list[Finding]:
         return sorted((f for p in self.projects for f in p.all_findings()), key=lambda f: (f.rank, f.project, f.repo or "", f.pipeline or "", f.id))
@@ -238,11 +239,12 @@ def analyze_project(org: OrgRaw, raw: ProjectRaw, *, cfg: Config, rules: Rules, 
         repo_policies = [pol for pol in policies if pol.repo in (repo["name"], "(all repositories)")]
         windows_from_pipelines = any(results[k].facts.windows_reasons for k in linked_keys if k in results)
         template_for = sorted(results[k].pipeline.name for k in usage.template_users.get(rid, set()) if k in results)
-        if template_for and profile.stack == "unknown" and not linked_keys:
-            profile.key, profile.name = "yaml-templates | none | none | none", "AZDO YAML template repository"
+        if template_for and not linked_keys:
+            mark_template_repo(profile, rules.archetype_rules)
+        windows_stacks = [rules.archetype_rules.label("stacks", s) for s in profile.stacks if rules.archetype_rules.rules["stacks"][s].windows]
         findings = [] if status == "Disabled" else repo_findings(
             raw.name, repo, activity=act, scan=scan, status=status, has_pipelines=bool(linked_keys or template_for),
-            windows_stack=profile.windows, windows_from_pipelines=windows_from_pipelines, policies=repo_policies,
+            windows_stacks=windows_stacks, windows_from_pipelines=windows_from_pipelines, policies=repo_policies,
             cfg_tier=a.gitlab_tier, limit_gb=a.gitlab_repo_limit_gb, rules=rules,
         )
         for k in linked_keys:
@@ -317,6 +319,58 @@ def analyze_project(org: OrgRaw, raw: ProjectRaw, *, cfg: Config, rules: Rules, 
     )
 
 
+def _counted(counter: Counter) -> str:
+    return ", ".join(f"{k} ({n})" for k, n in sorted(counter.items(), key=lambda kv: (-kv[1], str(kv[0]))))
+
+
+def archetype_tables(repos: list[RepoResult], rules: Rules) -> tuple[list[dict], list[dict]]:
+    """Archetype combinations (one row per archetype key) and components (one row per value of each dimension)."""
+    ar = rules.archetype_rules
+    combos: dict[str, dict[str, Any]] = {}
+    parts: dict[tuple[str, str], dict[str, Any]] = {}
+    for repo in repos:
+        if repo.status == "Disabled":
+            continue
+        prof, linked = repo.profile, len(repo.pipelines) + len(repo.releases)
+        entry = combos.setdefault(prof.key, {
+            "key": prof.key, "stack": prof.stack, "build": prof.build_tool, "deploy": prof.deploy, "artifact": prof.artifact,
+            "name": prof.name, "template": prof.template, "repos": [], "pipelines": 0, "points": [], "levels": Counter(),
+            "quality": Counter(), "markers": Counter()})
+        entry["repos"].append(repo.key)
+        entry["pipelines"] += linked
+        entry["points"].append(repo.score.points)
+        entry["levels"][repo.score.level] += 1
+        entry["quality"].update(prof.quality_tools)
+        entry["markers"].update(prof.markers)
+        values = [(section, short, v) for section, _, _, short in DIMENSIONS for v in prof.values(section)]
+        if not prof.stacks:
+            values.insert(0, ("stacks", "stack", "unknown"))
+        for section, short, value in values:
+            part = parts.setdefault((section, value), {"section": section, "value": value, "repos": [], "pipelines": 0, "with": Counter()})
+            part["repos"].append(repo.key)
+            part["pipelines"] += linked
+            part["with"].update(f"{s}:{v}" for sec, s, v in values if (sec, v) != (section, value))
+    combo_rows = sorted(
+        ({**e, "repo_count": len(e["repos"]), "avg_points": round(sum(e["points"]) / len(e["points"]), 1) if e["points"] else 0,
+          "levels": ", ".join(f"{k} {v}" for k, v in sorted(e["levels"].items())), "quality": _counted(e["quality"]),
+          "markers": _counted(e["markers"])} for e in combos.values()),
+        key=lambda e: (-e["repo_count"], e["key"]),
+    )
+    order = {section: i for i, (section, _, _, _) in enumerate(DIMENSIONS)}
+    titles = {section: title for section, _, title, _ in DIMENSIONS}
+    component_rows = []
+    for (section, value), part in parts.items():
+        top = sorted(part["with"].items(), key=lambda kv: (-kv[1], kv[0]))[:10]
+        component_rows.append({
+            "dimension": titles[section], "value": value,
+            "label": "no stack recognised - check the repo" if value == "unknown" else ar.label(section, value),
+            "repo_count": len(part["repos"]), "pipelines": part["pipelines"], "repos": part["repos"],
+            "with": ", ".join(f"{k} ({n})" for k, n in top), "_order": (order[section], -len(part["repos"]), value),
+        })
+    component_rows.sort(key=lambda r: r["_order"])
+    return combo_rows, component_rows
+
+
 def run_analysis(cfg: Config, rules: Rules, project_names: list[str], *, provider: FileProvider | None,
                  now: datetime | None = None) -> AnalysisResult:
     now = now or utcnow()
@@ -338,26 +392,11 @@ def run_analysis(cfg: Config, rules: Rules, project_names: list[str], *, provide
     by_key = {r.pipeline.key: r for p in projects for r in p.pipelines.values()}
     tasks = task_rows(all_pipelines, lambda p: by_key[p.key].repo_keys, TaskCatalog(org.tasks), rules)
 
-    archetypes: dict[str, dict[str, Any]] = {}
-    for p in projects:
-        for repo in p.repos:
-            if repo.status == "Disabled":
-                continue
-            entry = archetypes.setdefault(repo.profile.key, {"key": repo.profile.key, "name": repo.profile.name, "template": repo.profile.template,
-                                                             "repos": [], "pipelines": 0, "points": [], "levels": Counter()})
-            entry["repos"].append(repo.key)
-            entry["pipelines"] += len(repo.pipelines) + len(repo.releases)
-            entry["points"].append(repo.score.points)
-            entry["levels"][repo.score.level] += 1
-    archetype_rows = sorted(
-        ({**e, "repo_count": len(e["repos"]), "avg_points": round(sum(e["points"]) / len(e["points"]), 1) if e["points"] else 0,
-          "levels": ", ".join(f"{k} {v}" for k, v in sorted(e["levels"].items()))} for e in archetypes.values()),
-        key=lambda e: (-e["repo_count"], e["key"]),
-    )
+    archetype_rows, components = archetype_tables([r for p in projects for r in p.repos], rules)
     # one sweep over all projects' runs: projects sharing a pool overlap in time
     pool_stats = pool_usage([b for p in projects for b in p.raw.builds], cfg.collection.history_days)
     coverage = list(org.coverage) + [row for p in projects for row in p.raw.coverage]
     return AnalysisResult(
         generated=now, cfg=cfg, rules=rules, org=org, projects=projects, tasks=tasks, archetypes=archetype_rows,
-        clones=clone_clusters(all_pipelines), agents=agent_rows(org, pool_stats), coverage=coverage,
+        clones=clone_clusters(all_pipelines), agents=agent_rows(org, pool_stats), coverage=coverage, components=components,
     )

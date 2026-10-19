@@ -133,7 +133,7 @@ def pipeline_findings(p: Pipeline, f: PipelineFacts, rules: Rules, *, repo: str 
 
 
 def repo_findings(project: str, repo: dict, *, activity: RepoActivity, scan: RepoScan | None, status: str,
-                  has_pipelines: bool, windows_stack: bool, windows_from_pipelines: bool, policies: list[Any],
+                  has_pipelines: bool, windows_stacks: list[str], windows_from_pipelines: bool, policies: list[Any],
                   cfg_tier: str, limit_gb: float, rules: Rules) -> list[Finding]:
     out: list[Finding] = []
     name = repo["name"]
@@ -153,8 +153,8 @@ def repo_findings(project: str, repo: dict, *, activity: RepoActivity, scan: Rep
     if status in ("Dormant", "Dead", "Never"):
         last = activity.last_commit_any.date().isoformat() if activity.last_commit_any else "never"
         add("DORMANT", f"status {status}; last commit {last}")
-    if windows_stack and not windows_from_pipelines:
-        add("WINDOWS_TOOLCHAIN", ".NET Framework project files (TargetFramework net4x)")
+    if windows_stacks and not windows_from_pipelines:
+        add("WINDOWS_TOOLCHAIN", "Windows-only project types: " + compact(windows_stacks))
     if scan:
         if scan.lfs_patterns:
             add("LFS", compact(scan.lfs_patterns))

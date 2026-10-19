@@ -21,6 +21,7 @@ class Rules:
     predefined_prefix: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
     scan: dict[str, Any] = field(default_factory=dict)
     archetypes: dict[str, Any] = field(default_factory=dict)
+    archetype_rules: Any = None  # compiled archetypes.yaml (analyze.archetype.ArchetypeRules)
     scoring: dict[str, Any] = field(default_factory=dict)
     findings: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -60,6 +61,8 @@ def _read(path: Path) -> dict[str, Any]:
 
 
 def load_rules(folder: Path) -> Rules:
+    from azdo_analyzer.analyze.archetype import compile_archetypes  # here, not at the top: the analyze package imports this module
+
     rules = Rules()
     mapping = _read(folder / "task_mapping.yaml").get("tasks") or {}
     rules.task_mapping = {str(k).lower(): (v or {}) for k, v in mapping.items()}
@@ -73,6 +76,7 @@ def load_rules(folder: Path) -> Rules:
             rules.predefined_env[gitlab_key(name)] = value
     rules.scan = _read(folder / "scan_patterns.yaml")
     rules.archetypes = _read(folder / "archetypes.yaml")
+    rules.archetype_rules = compile_archetypes(rules.archetypes)
     rules.scoring = _read(folder / "scoring.yaml")
     rules.findings = _read(folder / "findings.yaml").get("findings") or {}
     return rules

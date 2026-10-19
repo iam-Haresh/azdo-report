@@ -59,7 +59,8 @@ def _slug(heading: str) -> str:
 def test_relative_links_and_anchors_resolve():
     broken = []
     for doc in sorted(DOCS.rglob("*.md")):
-        for target in re.findall(r"\]\(([^)\s]+)\)", doc.read_text(encoding="utf-8")):
+        text = re.sub(r"`[^`\n]*`", "", doc.read_text(encoding="utf-8"))  # code spans are not links (regexes contain "](")
+        for target in re.findall(r"\]\(([^)\s]+)\)", text):
             if re.match(r"^[a-z]+://", target):
                 continue
             path_part, _, anchor = target.partition("#")
@@ -72,3 +73,10 @@ def test_relative_links_and_anchors_resolve():
                 if anchor not in headings:
                     broken.append(f"{doc.relative_to(DOCS)} → {target} (no such heading)")
     assert broken == []
+
+
+def test_archetype_values_page_matches_the_rules():
+    from azdo_analyzer.report.archetype_doc import DOC_PATH, RULES_PATH, render
+
+    expected = render(yaml.safe_load(RULES_PATH.read_text(encoding="utf-8")))
+    assert DOC_PATH.read_text(encoding="utf-8") == expected, "regenerate it: python -m azdo_analyzer.report.archetype_doc"

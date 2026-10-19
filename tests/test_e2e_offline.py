@@ -38,7 +38,9 @@ def test_analysis_results(sample_cfg, rules, provider):
     assert repos["legacy-web"].releases == ["release:Contoso Retail:5"]
     assert repos["pipeline-templates"].template_for == ["payments-api-ci"]
 
-    assert repos["payments-api"].profile.key == "java-maven | maven | kubernetes | image"
+    assert repos["payments-api"].profile.key == "java-maven | maven, docker | kubernetes | image"
+    assert repos["payments-api"].profile.quality_tools == ["sonarqube"] and repos["payments-api"].profile.markers == ["docker", "helm"]
+    assert repos["pipeline-templates"].profile.key == "azdo-yaml-templates | none | none | none"
     assert repos["legacy-web"].profile.name == ".NET Framework -> IIS (Windows)"
     assert repos["legacy-web"].complexity == "High" and repos["old-tools"].status == "Dead"
     assert repos["Data Scripts"].status == "Disabled" and repos["Data Scripts"].findings == []
@@ -85,6 +87,12 @@ def test_reports_written(sample_cfg, rules, provider):
                    "Alice Admin, Bob Boss", "BUILD_PLATFORM", "```mermaid"):
         assert needle in dossier, needle
     assert "_manual_- [x]" not in dossier  # bullets must not be glued together
+    assert "| Stack | dotnet-framework | dotnet-framework: LegacyWeb/LegacyWeb.csproj (<TargetFrameworkVersion>v4.8) |" in dossier
+    assert "| Deploy targets | iis, deployment-group | iis: task IISWebAppManagementOnMachineGroup@0 in release legacy-web-release" in dossier
+    assert "|\n\n> **Blockers" in dossier  # blank line between the archetype table and the findings box
+    archetypes = wb["Archetypes"]
+    cells = [str(c.value) for row in archetypes.iter_rows() for c in row if c.value is not None]
+    assert "Archetype components (one row per value of each dimension)" in cells and "Found together with (repos)" in cells
     summary = paths["summaries"][0].read_text()
     assert "Wave readiness" in summary and "old-tools" in summary
     assert "First run" in paths["diff"].read_text()

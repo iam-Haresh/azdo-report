@@ -213,7 +213,8 @@ def _repos(book: Book, result: AnalysisResult) -> None:
             rows.append([
                 p.name, r.name, (r.repo.get("defaultBranch") or "").replace("refs/heads/", ""), round((r.repo.get("size") or 0) / 1024 / 1024, 1),
                 _yn(r.repo.get("isDisabled")), _yn(r.repo.get("isFork")), a.branches, a.stale_branches, a.branching_model, a.tags, a.last_commit_any,
-                a.open_prs, a.oldest_pr_days, r.profile.stack, r.profile.build_tool, compact(r.profile.deploy_targets) or "none", r.profile.artifact,
+                a.open_prs, a.oldest_pr_days, r.profile.stack, r.profile.build_tool, ", ".join(r.profile.quality_tools) or "none",
+                r.profile.deploy, r.profile.artifact, ", ".join(r.profile.markers),
                 bool(s and s.lfs_patterns), bool(s and s.submodules), compact(sorted({f["feed"] for f in s.feeds})) if s else "",
                 (s.counts.get("AZDO_URL", 0) if s else None), (s.counts.get("VSO_LOGGING_CMD", 0) if s else None),
                 s.source if s else "not scanned", r.repo.get("webUrl"),
@@ -221,8 +222,9 @@ def _repos(book: Book, result: AnalysisResult) -> None:
     book.table(ws, [
         ("Project", 20, TEXT), ("Repo", 28, TEXT), ("Default branch", 14, TEXT), ("Size MB", 9, FLOAT), ("Disabled", 8, BOOL),
         ("Fork", 6, BOOL), ("Branches", 9, INT), ("Stale branches", 9, INT), ("Branching model", 24, TEXT), ("Tags", 6, INT),
-        ("Last commit", 11, DATE), ("Open PRs", 8, INT), ("Oldest PR days", 9, INT), ("Stack", 16, TEXT), ("Build tool", 10, TEXT),
-        ("Deploy targets", 20, TEXT), ("Artifact", 9, TEXT), ("LFS", 5, BOOL), ("Submodules", 6, BOOL), ("Azure Artifacts feeds", 24, TEXT),
+        ("Last commit", 11, DATE), ("Open PRs", 8, INT), ("Oldest PR days", 9, INT), ("Stack", 22, TEXT), ("Build tools", 18, TEXT),
+        ("Test & scan tools", 20, TEXT), ("Deploy targets", 20, TEXT), ("Artifacts", 16, TEXT), ("Markers", 22, TEXT), ("LFS", 5, BOOL),
+        ("Submodules", 6, BOOL), ("Azure Artifacts feeds", 24, TEXT),
         ("AZDO URL hits", 8, INT), ("##vso hits", 8, INT), ("Content", 10, TEXT), ("Web URL", 40, URL),
     ], rows)
 
@@ -391,10 +393,17 @@ def _findings(book: Book, result: AnalysisResult) -> None:
 def _archetypes(book: Book, result: AnalysisResult) -> None:
     ws = book.sheet("Archetypes")
     row = book.table(ws, [
-        ("Archetype key (stack | build | deploy | artifact)", 50, TEXT), ("Named archetype", 36, TEXT), ("Proposed template", 22, TEXT),
-        ("Repos", 7, INT), ("Pipelines", 9, INT), ("Avg score", 9, FLOAT), ("Complexity mix", 24, TEXT), ("Repos list", 80, TEXT),
-    ], [[a["key"], a["name"], a["template"], a["repo_count"], a["pipelines"], a["avg_points"], a["levels"], compact(a["repos"], limit=15)]
-        for a in result.archetypes])
+        ("Archetype key (stack | build | deploy | artifact)", 50, TEXT), ("Stack", 22, TEXT), ("Build tools", 18, TEXT),
+        ("Deploy targets", 20, TEXT), ("Artifacts", 16, TEXT), ("Named archetype", 36, TEXT), ("Proposed template", 24, TEXT),
+        ("Repos", 7, INT), ("Pipelines", 9, INT), ("Avg score", 9, FLOAT), ("Complexity mix", 22, TEXT),
+        ("Test & scan tools (repos)", 30, TEXT), ("Markers (repos)", 30, TEXT), ("Repos list", 80, TEXT),
+    ], [[a["key"], a["stack"], a["build"], a["deploy"], a["artifact"], a["name"], a["template"], a["repo_count"], a["pipelines"],
+         a["avg_points"], a["levels"], a["quality"], a["markers"], compact(a["repos"], limit=15)] for a in result.archetypes])
+    row = book.table(ws, [
+        ("Dimension", 16, TEXT), ("Value", 22, TEXT), ("What it is", 44, TEXT), ("Repos", 7, INT), ("Pipelines", 9, INT),
+        ("Found together with (repos)", 70, TEXT), ("Repos list", 80, TEXT),
+    ], [[c["dimension"], c["value"], c["label"], c["repo_count"], c["pipelines"], c["with"], compact(c["repos"], limit=15)]
+        for c in result.components], start_row=row + 1, title="Archetype components (one row per value of each dimension)", freeze=False)
     book.table(ws, [("Clone type", 18, TEXT), ("Fingerprint", 11, TEXT), ("Pipelines", 60, TEXT), ("Count", 7, INT), ("Task sequence", 80, TEXT)],
                [[c["type"], c["fingerprint"], compact(c["pipelines"], limit=10), len(c["pipelines"]), c["tasks"]] for c in result.clones],
                start_row=row + 1, title="Pipeline clones (same or similar task sequence)", freeze=False)

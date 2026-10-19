@@ -16,7 +16,7 @@ Items marked *(new)* were added to the original checklist. The per-repo dossiers
 
   The tool also reads: task catalog and task groups, policies, run history and timelines, deployments, environments, checks, deployment groups, secure files, agents and their capabilities, extensions, feeds and service hooks.
 - **Export classic definitions as JSON.** The raw cache keeps every definition (`out/raw/<project>/build_definition|release_definition/*.json`). Task groups are expanded inline.
-- **Classify into archetypes.** Stack × build tool × deploy target × artifact (Archetypes sheet, plus pipeline "fingerprints" that find clones). Most orgs end up with 5–8.
+- **Classify into archetypes.** Stack × build tools × deploy targets × artifacts, plus test & scan tools and markers; a repo can have several values in each (Archetypes sheet: combinations, per-value components, and pipeline "fingerprints" that find clones). Most orgs end up with 5–8 templates built from a set of shared components.
 - **Map each archetype to a shared GitLab CI template.** Only repos that don't fit an archetype need custom analysis.
 - **Score complexity per repo.** Baseline: YAML pipeline = Low, Classic = Medium, Classic release with approvals and multiple stages = High. `rules/scoring.yaml` adds weighted points on top. Migrate Low first to prove the pattern.
 - *(new)* **Drop dead weight first.** Disabled, draft, never-run and dormant definitions and repos are listed as retire candidates.

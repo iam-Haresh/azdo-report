@@ -24,7 +24,7 @@
 | Branch Policies | branch policy and the branch it applies to | [branch-policies.md](branch-policies.md) |
 | Dependencies | link between two items (repo, pipeline, resource) | [dependencies.md](dependencies.md) |
 | Findings | migration risk found | [findings.md](findings.md) |
-| Archetypes | archetype key; second table: pipeline clones | [archetypes.md](archetypes.md) |
+| Archetypes | one row per archetype combination; then one row per value of each dimension (components); then pipeline clones | [archetypes.md](archetypes.md) |
 | Coverage | API endpoint the tool called | [coverage.md](coverage.md) |
 
 ## Colours

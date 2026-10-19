@@ -19,7 +19,7 @@
 | Project | Azure DevOps project | Projects API |
 | Repo | repository name | `git/repositories` |
 | GitLab path | proposed path inside your GitLab group; `(slug collision!)` if another repo gets the same path | [GitLab path](../concepts.md#gitlab-path) |
-| Archetype | named archetype, for example ".NET Framework -> IIS (Windows)" | `overrides.yaml` → `archetype`, else the [archetype key](../concepts.md#archetype-key)'s name (or `custom`) |
+| Archetype | named archetype, for example ".NET Framework -> IIS (Windows)". A repo with several stacks can have several names, comma-separated | `overrides.yaml` → `archetype`, else the [named archetypes](../concepts.md#named-archetypes) of the repo (or `custom`) |
 | Pipeline type | the kinds of linked pipelines: `YAML`, `Classic build`, `Classic release` | see "How repos and pipelines are linked"; `templates for <pipeline>` for template-only repos; `none` when nothing is linked |
 | Build pipelines | number of build/YAML pipelines that build this repo | pipeline definition → repository |
 | Releases | number of classic releases that deploy this repo | release artifacts → build pipeline → repository, or a Git artifact |
@@ -29,7 +29,7 @@
 | Blocker/high findings | IDs of the blocker and high findings | same findings as Blocker (first 6 IDs, then `… (+N)`); details on the [Findings sheet](findings.md) |
 | Activity | Active, Dormant, Dead, Never or Disabled | [activity status](../concepts.md#activity-status) |
 | Recommendation | what to do with the repo | `overrides.yaml` → `recommendation`, else Active → Migrate, Dormant → Review with owner, Dead/Never → Archive / retire, Disabled → Skip (disabled) |
-| Template | proposed shared GitLab template | `overrides.yaml` → `template`, else the named archetype's `template` |
+| Template | proposed shared GitLab templates, comma-separated | `overrides.yaml` → `template`, else the named archetypes' `template` |
 | Wave | migration wave | `overrides.yaml` → `wave` |
 | Owner | owning team or person | `overrides.yaml` → `owner` |
 | Status | progress | `overrides.yaml` → `status`; `Not started` if not set |
