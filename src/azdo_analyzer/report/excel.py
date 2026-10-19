@@ -124,6 +124,19 @@ def _kinds(results: list[PipelineResult]) -> str:
     return compact(sorted({r.pipeline.kind_label for r in results})) or "none"
 
 
+# A pipeline's or release's own archetype values (from its definition), plus the stacks of the repos it builds or deploys.
+_OWN_COLUMNS: list[Column] = [("Repo stack", 20, TEXT), ("Build tools", 18, TEXT), ("Test & scan tools", 18, TEXT),
+                              ("Deploy targets", 22, TEXT), ("Artifacts produced", 18, TEXT)]
+
+
+def _own_values(r: PipelineResult) -> list[str]:
+    stacks = ", ".join(r.repo_stacks) or ("unknown" if r.repo_keys else "")  # blank = no repo in this project
+    prof = r.profile
+    if prof is None:
+        return [stacks, "", "", "", ""]
+    return [stacks, prof.build_tool, ", ".join(prof.quality_tools) or "none", prof.deploy, prof.artifact]
+
+
 def write_workbook(result: AnalysisResult, path: Path, dossier_link: Callable[[RepoResult], str] | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     book = Book(path)
@@ -262,7 +275,7 @@ def _pipelines(book: Book, result: AnalysisResult) -> None:
                 compact({j.pool or j.vm_image or "" for j in jobs}), compact({d for j in jobs for d in j.demands}),
                 compact(t.describe() for t in pl.triggers), compact(f.variable_groups), compact(f.service_connections),
                 len(pl.all_steps()), len(f.tasks), compact(f.unmapped_tasks), compact(f.task_groups), len(pl.templates),
-                r.last_activity, st.runs if st else 0, st.runs_90d if st else 0, st.success_rate if st else None,
+                *_own_values(r), r.last_activity, st.runs if st else 0, st.runs_90d if st else 0, st.success_rate if st else None,
                 st.p50_minutes if st else None, st.p95_minutes if st else None, st.queue_p95_minutes if st else None,
                 r.activity, r.fingerprint, r.score.points, r.score.level, r.score.describe(), compact(pl.warnings, limit=3), pl.url,
             ])
@@ -270,7 +283,7 @@ def _pipelines(book: Book, result: AnalysisResult) -> None:
         ("Project", 18, TEXT), ("Pipeline", 30, TEXT), ("ID", 6, INT), ("Kind", 13, TEXT), ("Folder", 14, TEXT), ("Repo", 22, TEXT),
         ("YAML path", 24, TEXT), ("Enabled", 8, BOOL), ("Depth", 9, TEXT), ("Pools", 18, TEXT), ("Demands", 18, TEXT), ("Triggers", 40, TEXT),
         ("Variable groups", 22, TEXT), ("Service connections", 24, TEXT), ("Steps", 6, INT), ("Distinct tasks", 8, INT),
-        ("Unmapped tasks", 24, TEXT), ("Task groups", 18, TEXT), ("Templates", 9, INT), ("Last run", 11, DATE), ("Runs", 6, INT),
+        ("Unmapped tasks", 24, TEXT), ("Task groups", 18, TEXT), ("Templates", 9, INT), *_OWN_COLUMNS, ("Last run", 11, DATE), ("Runs", 6, INT),
         ("Runs 90d", 7, INT), ("Success %", 8, FLOAT), ("p50 min", 7, FLOAT), ("p95 min", 7, FLOAT), ("Queue p95 min", 9, FLOAT),
         ("Activity", 9, TEXT), ("Fingerprint", 11, TEXT), ("Score", 6, INT), ("Complexity", 10, TEXT), ("Score reasons", 50, TEXT),
         ("Warnings", 30, TEXT), ("URL", 40, URL),
@@ -290,14 +303,14 @@ def _releases(book: Book, result: AnalysisResult) -> None:
                 p.name, pl.name, pl.id, pl.folder, pl.enabled, pl.depth,
                 compact(f"{a.alias} ({a.type}: {a.source_name})" for a in pl.artifacts), compact(t.describe() for t in pl.triggers),
                 len(pl.stages), compact(f.approvals), compact(f.gates), compact(f.deployment_groups), compact(f.variable_groups),
-                compact(f.service_connections), len(f.tasks), compact(f.unmapped_tasks), r.last_activity, deployments, r.activity,
+                compact(f.service_connections), len(f.tasks), compact(f.unmapped_tasks), *_own_values(r), r.last_activity, deployments, r.activity,
                 r.score.points, r.score.level, r.score.describe(), pl.url,
             ])
     book.table(ws, [
         ("Project", 18, TEXT), ("Release", 30, TEXT), ("ID", 6, INT), ("Folder", 14, TEXT), ("Enabled", 8, BOOL), ("Depth", 9, TEXT),
         ("Artifacts", 40, TEXT), ("Triggers", 30, TEXT), ("Stages", 7, INT), ("Approvals", 30, TEXT), ("Gates", 26, TEXT),
         ("Deployment groups", 20, TEXT), ("Variable groups", 22, TEXT), ("Service connections", 24, TEXT), ("Distinct tasks", 8, INT),
-        ("Unmapped tasks", 24, TEXT), ("Last deployment", 12, DATE), ("Deployments", 9, INT), ("Activity", 9, TEXT), ("Score", 6, INT),
+        ("Unmapped tasks", 24, TEXT), *_OWN_COLUMNS, ("Last deployment", 12, DATE), ("Deployments", 9, INT), ("Activity", 9, TEXT), ("Score", 6, INT),
         ("Complexity", 10, TEXT), ("Score reasons", 50, TEXT), ("URL", 40, URL),
     ], rows, colorize={"Complexity": _LEVEL, "Activity": _ACTIVITY})
 
@@ -419,9 +432,10 @@ def _archetypes(book: Book, result: AnalysisResult) -> None:
     ], [[a["key"], a["stack"], a["build"], a["deploy"], a["artifact"], a["name"], a["template"], a["repo_count"], a["pipelines"],
          a["avg_points"], a["levels"], a["quality"], a["markers"], compact(a["repos"], limit=15)] for a in result.archetypes])
     row = book.table(ws, [
-        ("Dimension", 16, TEXT), ("Value", 22, TEXT), ("What it is", 44, TEXT), ("Repos", 7, INT), ("Pipelines", 9, INT),
-        ("Found together with (repos)", 70, TEXT), ("Repos list", 80, TEXT),
-    ], [[c["dimension"], c["value"], c["label"], c["repo_count"], c["pipelines"], c["with"], compact(c["repos"], limit=15)]
+        ("Dimension", 16, TEXT), ("Value", 22, TEXT), ("What it is", 44, TEXT), ("Repos", 7, INT), ("Build pipelines", 9, INT),
+        ("Releases", 9, INT), ("Found together with (repos)", 70, TEXT), ("Repos list", 60, TEXT), ("Releases list", 60, TEXT),
+    ], [[c["dimension"], c["value"], c["label"], c["repo_count"], c["build_count"], c["release_count"], c["with"],
+         compact(c["repos"], limit=15), compact(c["releases"], limit=15)]
         for c in result.components], start_row=row + 1, title="Archetype components (one row per value of each dimension)", freeze=False)
     book.table(ws, [("Clone type", 18, TEXT), ("Fingerprint", 11, TEXT), ("Pipelines", 60, TEXT), ("Count", 7, INT), ("Task sequence", 80, TEXT)],
                [[c["type"], c["fingerprint"], compact(c["pipelines"], limit=10), len(c["pipelines"]), c["tasks"]] for c in result.clones],

@@ -68,6 +68,7 @@ _No build/YAML pipeline builds this repository._
 - [x] Triggers: {{ b.triggers }}
 - [x] Agent pool: {{ b.pools or "—" }}{% if b.demands %} · demands: {{ b.demands }}{% endif %}{% if b.windows %} · ⚠ Windows: {{ b.windows }}{% endif +%}
 - [x] Toolchain hints: {{ b.toolchain or "—" }}
+- [x] Detected: {{ b.detected }}
 - [x] Tasks: {{ b.task_count }} distinct{% if b.unmapped %} · unmapped: {{ b.unmapped }}{% endif %}{% if b.marketplace %} · marketplace: {{ b.marketplace }}{% endif +%}
 - [x] YAML templates / extends from other repos: {{ b.templates or "none" }}{% if b.unresolved %} · ⚠ unresolved: {{ b.unresolved }}{% endif %}{% if b.dynamic %} · conditional template logic{% endif +%}
 - [x] Build number format: {{ b.build_number or "default" }}
@@ -102,6 +103,7 @@ _No classic release or YAML deployment stage deploys this repository._
 ### {{ r.name }} — Classic release{% if r.url %} ([open]({{ r.url }})){% endif +%}
 
 - [x] Artifact sources: {{ r.artifacts or "—" }}
+- [x] Detected: {{ r.detected }}
 - [x] Release triggers: {{ r.triggers or "manual" }}
 - [x] Release name format: `{{ r.release_name_format or "default" }}`
 - [x] Stages: {{ r.stages|length }} (table below){% if r.deployment_groups %} · deployment groups: {{ r.deployment_groups }}{% endif +%}

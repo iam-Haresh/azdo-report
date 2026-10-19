@@ -91,6 +91,12 @@ def test_reports_written(sample_cfg, rules, provider):
         assert ws["A1"].value == NOTE and ws["A1"].fill.fgColor.rgb == "FFFFC000", ws.title
         assert ws.title == "Summary" or ws.freeze_panes == "A4", ws.title
     rows = {r["Repo"]: r for r in table_rows(wb["Tracker"])}
+    own = ("Repo stack", "Build tools", "Test & scan tools", "Deploy targets", "Artifacts produced")
+    releases = {r["Release"]: r for r in table_rows(wb["Releases"])}
+    assert tuple(releases["legacy-web-release"][c] for c in own) == ("dotnet-framework", "none", "none", "iis, deployment-group", "none")
+    builds = {r["Pipeline"]: r for r in table_rows(wb["Pipelines"])}
+    assert tuple(builds["payments-api-ci"][c] for c in own) == ("java-maven", "maven, docker", "sonarqube", "kubernetes", "image")
+    assert builds["old-tools-ci"]["Repo stack"] == "unknown" and builds["orphan-ci"]["Repo stack"] is None
     assert rows["legacy-web"]["Complexity"] == "High" and rows["legacy-web"]["Pipeline type"] == "Classic build, Classic release"
     assert rows["pipeline-templates"]["Pipeline type"] == "templates for payments-api-ci"
     dossier = paths["dossiers"]["Contoso Retail/legacy-web"].read_text()
@@ -104,6 +110,7 @@ def test_reports_written(sample_cfg, rules, provider):
     archetypes = wb["Archetypes"]
     cells = [str(c.value) for row in archetypes.iter_rows() for c in row if c.value is not None]
     assert "Archetype components (one row per value of each dimension)" in cells and "Found together with (repos)" in cells
+    assert "- [x] Detected: deploy targets: iis, deployment-group" in dossier
     summary = paths["summaries"][0].read_text()
     assert "Wave readiness" in summary and "old-tools" in summary
     assert "First run" in paths["diff"].read_text()

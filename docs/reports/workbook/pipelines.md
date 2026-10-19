@@ -28,6 +28,11 @@
 | Unmapped tasks | tasks with no GitLab mapping yet | tasks with no entry in `rules/task_mapping.yaml` |
 | Task groups | classic task groups used, including nested ones **(deep only)** | task groups expanded from `distributedtask/taskgroups` |
 | Templates | number of YAML template includes resolved **(deep only)** | `template:` and `extends:` references, including other repos at their pinned ref |
+| Repo stack | stacks of the repo the pipeline builds; `unknown` if that repo's stack wasn't recognised; blank if the repo isn't in this project | the repo's Stack on the [Repos sheet](repos.md) |
+| Build tools | build tools this pipeline uses, for example `maven, docker`; `none` if none were found **(deep only)** | its own tasks, task inputs, inline scripts and the repo scripts it calls by name, matched with `rules/archetypes.yaml` ([values](../archetype-values.md#build-tools)). This uses the pipeline's own definition only (no repo files, no assumed tools), so its repo can show more values |
+| Test & scan tools | test runners and scanners it runs, for example `sonarqube` **(deep only)** | the same signals ([values](../archetype-values.md#test--scan-tools)) |
+| Deploy targets | where it deploys (YAML deployment stages), for example `kubernetes` **(deep only)** | the same signals, plus service connection types and deployment-group jobs ([values](../archetype-values.md#deploy-targets)) |
+| Artifacts produced | what it publishes, for example `image, files` **(deep only)** | the same signals ([values](../archetype-values.md#artifacts)) |
 | Last run | when the pipeline last ran | newest of the definition's latest build (finish time, or queue time if still running) and the newest run in the history window |
 | Runs | completed runs in the history window | `build/builds` since `collection.history_days` ago |
 | Runs 90d | completed runs in the last 90 days | same runs |

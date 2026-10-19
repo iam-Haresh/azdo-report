@@ -90,6 +90,14 @@ Manual decisions go in `overrides.yaml` (see `overrides.example.yaml`; keep it i
 
 The counts come from the rule files in `rules/`, so they grow as you add rules; a test keeps the numbers below in sync with them. The full lists, with how each pattern is detected, are in [archetype values](docs/reports/archetype-values.md), [pipelines](docs/reports/workbook/pipelines.md#what-the-tool-identifies-in-pipelines-and-releases) and [releases](docs/reports/workbook/releases.md#what-the-tool-identifies-in-classic-releases).
 
+### Where to see them
+
+| For | Each one, with its patterns | Summary across all of them | Why a pattern was found |
+|---|---|---|---|
+| **Repos** | [Repos sheet](docs/reports/workbook/repos.md): Stack, Build tools, Test & scan tools, Deploy targets, Artifacts, Markers. The [Tracker](docs/reports/workbook/tracker.md) adds the named archetype and proposed template | [Archetypes sheet](docs/reports/workbook/archetypes.md): one row per archetype combination, and the Repos count and list per pattern. Also the Summary sheet's top 10 combinations and each project's `summary.md` | the repo's [dossier](docs/reports/repo-dossier.md): the archetype table names the file, task or script line behind each value |
+| **Pipelines** | [Pipelines sheet](docs/reports/workbook/pipelines.md): Repo stack, Build tools, Test & scan tools, Deploy targets, Artifacts produced | Archetypes sheet: the Build pipelines count per pattern | the dossier, section 3: a "Detected" line per pipeline |
+| **Releases** | [Releases sheet](docs/reports/workbook/releases.md): the same five columns | Archetypes sheet: the Releases count and list per pattern, including releases that aren't linked to any repo | the dossier, section 4: a "Detected" line per release |
+
 ### Repo archetypes
 
 Found mostly from the repo's files. A repo can match several patterns in each dimension, for example the stack `dotnet, angular`.

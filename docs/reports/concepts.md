@@ -110,6 +110,7 @@ How values are found (rules in `rules/archetypes.yaml`):
 - **Assumed build tool:** when no build step builds a stack, its usual tool is assumed, for example `npm` for Angular.
 - **No repo files** (inventory runs, or a repo that was not cloned): the stack is inferred from the build tools, for example VSBuild gives `dotnet-framework` and Maven gives `java-maven`.
 - Repos used only for YAML templates by other pipelines get the stack `azdo-yaml-templates`.
+- **Pipelines and releases** also get their own build tools, test & scan tools, deploy targets and artifacts, from their own definition only: tasks, inputs, scripts, connections, jobs and the repo scripts they call by name. These appear on the [Pipelines](workbook/pipelines.md) and [Releases](workbook/releases.md) sheets. They have no files of their own, so their stack is the stack of the repos they build or deploy.
 - The repo's [dossier](repo-dossier.md) shows the evidence for every value: the file, task or script line that matched.
 
 ### Named archetypes

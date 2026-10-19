@@ -25,6 +25,11 @@
 | Service connections | connections the release uses | task inputs (stages and gates) containing a connection's ID or name; the connection behind a Key Vault group |
 | Distinct tasks | number of different tasks across all stages | as on the [Pipelines sheet](pipelines.md) |
 | Unmapped tasks | tasks with no entry in `rules/task_mapping.yaml` | as on the Pipelines sheet |
+| Repo stack | stacks of the repos the release deploys; `unknown` if not recognised; blank if no artifact links to a repo in this project | the Stack, on the [Repos sheet](repos.md), of the repos behind its Build and Git artifacts |
+| Build tools | build tools used in the release's stages, which is rare; `none` if none were found **(deep only)** | the tasks, task inputs and inline scripts of every stage, matched with `rules/archetypes.yaml` ([values](../archetype-values.md#build-tools)) |
+| Test & scan tools | tests and scanners run during the release, for example API or load tests after a deployment **(deep only)** | the same signals ([values](../archetype-values.md#test--scan-tools)) |
+| Deploy targets | where the release deploys, for example `iis, deployment-group` **(deep only)** | the same signals, plus service connection types and deployment-group jobs ([values](../archetype-values.md#deploy-targets)) |
+| Artifacts produced | what the release publishes, for example an image push or a package promotion **(deep only)** | the same signals ([values](../archetype-values.md#artifacts)) |
 | Last deployment | most recent release activity | newest of the latest deployment in the history window and the creation date of the latest release |
 | Deployments | deployments of any stage in the history window | `release/deployments` since `collection.history_days` ago |
 | Activity | Active, Dormant, Dead or Never | from Last deployment ([activity status](../concepts.md#activity-status)) |
@@ -39,6 +44,8 @@
 - A release is linked to repos through its Build artifacts. See the [Tracker](tracker.md) for how repos and pipelines are linked.
 
 ## What the tool identifies in classic releases
+
+**Where to see a release summary:** the Repo stack, Build tools, Test & scan tools, Deploy targets and Artifacts produced columns above give each release's values. The components table on the [Archetypes sheet](archetypes.md) counts and lists the releases per value, for example every release that deploys to IIS. Both include releases that aren't linked to any repo: those whose artifacts come from another project, Jenkins, GitHub, a container registry or a package feed.
 
 Release tasks and scripts are matched with the same 158 technology patterns as build pipelines; for releases, the [deploy targets](../archetype-values.md#deploy-targets) matter most. The same 32 kinds of findings apply, including the release-heavy ones: approvals, gates, manual interventions, agentless jobs, deployment groups, config transforms and internal-only targets. All counts are on the [Pipelines page](pipelines.md#what-the-tool-identifies-in-pipelines-and-releases).
 

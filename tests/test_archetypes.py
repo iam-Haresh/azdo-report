@@ -5,13 +5,17 @@ from __future__ import annotations
 import copy
 import re
 import time
+from types import SimpleNamespace
 
 import pytest
 
+from azdo_analyzer.analyze import archetype_tables
 from azdo_analyzer.analyze.archetype import (
     ArchetypeRulesError,
     FileIndex,
+    RepoProfile,
     compile_archetypes,
+    profile_pipeline,
     profile_repo,
 )
 from azdo_analyzer.model import Job, Pipeline, ResourceRef, Stage, Step
@@ -283,3 +287,47 @@ def test_large_repo_listing_is_fast(rules):
     assert time.perf_counter() - started < 10
     assert prof.stacks == ["java-maven", "angular"]
     assert len(FileIndex(files).paths) == 80_003
+
+
+# ------------------------------------------------------------------------------------------- pipelines and releases
+def test_a_release_gets_its_own_values_but_no_stack(rules):
+    release = pipeline(task("IISWebAppDeploymentOnMachineGroup@0", WebSiteName="shop"), task("SqlDacpacDeploymentOnMachineGroup@0"),
+                       name="shop-release", kind="classic_release", job_kind="deployment_group")
+    prof = profile_pipeline(release, {}, rules)
+    assert prof.deploy_targets == ["iis", "deployment-group", "database"]
+    assert prof.stacks == [] and prof.markers == [] and prof.build_tools == []
+    assert prof.evidence["deploy_targets:iis"] == ["task IISWebAppDeploymentOnMachineGroup@0 in release shop-release"]
+
+
+def test_pipeline_values_use_its_own_definition_only(rules):
+    files = {"ci/deploy.sh": "helm upgrade --install shop ./chart", "yarn.lock": "", "Dockerfile": "FROM x"}
+    p = pipeline(script("./ci/deploy.sh"), task("AzureCLI@2", inlineScript="az webapp deploy --name shop"))
+    with_repo = profile_pipeline(p, {}, rules, FileIndex(list(files)), files.get)
+    assert with_repo.deploy_targets == ["kubernetes", "azure-app-service"]  # the called script counts; azure is replaced
+    assert with_repo.build_tools == [] and with_repo.artifacts == []  # yarn.lock and the Dockerfile describe the repo
+    assert profile_pipeline(p, {}, rules).deploy_targets == ["azure-app-service"]  # without the repo's files
+
+
+def test_components_count_releases_including_unlinked_and_skip_disabled(rules):
+    def prof(**values):
+        return RepoProfile(**values)
+
+    repo = SimpleNamespace(key="P/shop", status="Active", profile=prof(stacks=["dotnet-framework"], deploy_targets=["iis"]),
+                           pipelines=["build:P:1"], releases=["release:P:2"], score=SimpleNamespace(points=5, level="Medium"))
+    def result(name, kind, values, repo_keys=(), enabled=True):
+        return SimpleNamespace(pipeline=SimpleNamespace(name=name, kind=kind, project="P", enabled=enabled),
+                               profile=prof(**values), repo_keys=list(repo_keys))
+    pipelines = [
+        result("shop-ci", "classic_build", {"build_tools": ["msbuild"]}, ["P/shop"]),
+        result("shop-release", "classic_release", {"deploy_targets": ["iis"]}, ["P/shop"]),
+        result("lambda-release", "classic_release", {"deploy_targets": ["aws-lambda"]}),  # Jenkins artifact: no repo
+        result("old-release", "classic_release", {"deploy_targets": ["ftp"]}, enabled=False),
+    ]
+    _, components = archetype_tables([repo], pipelines, rules)
+    rows = {(c["dimension"], c["value"]): c for c in components}
+    assert (rows[("Stack", "dotnet-framework")]["build_count"], rows[("Stack", "dotnet-framework")]["release_count"]) == (1, 1)
+    assert rows[("Deploy targets", "iis")]["releases"] == ["P/shop-release"]
+    lam = rows[("Deploy targets", "aws-lambda")]
+    assert (lam["repo_count"], lam["release_count"], lam["releases"]) == (0, 1, ["P/lambda-release"])
+    assert ("Deploy targets", "ftp") not in rows
+    assert rows[("Build tools", "msbuild")]["build_count"] == 1

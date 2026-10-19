@@ -30,6 +30,7 @@ DIMENSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("markers", "marker", "Markers", "marker"),
 )
 SECTIONS = tuple(d[0] for d in DIMENSIONS)
+PIPELINE_SECTIONS = ("build_tools", "quality_tools", "deploy_targets", "artifacts")  # what one pipeline or release shows itself
 TEMPLATE_STACK = "azdo-yaml-templates"
 MAX_CONTENT_READS = 20  # files read per content check (shallowest first)
 MAX_SCRIPT_FILES = 20  # repo script files searched because a pipeline calls them
@@ -473,9 +474,9 @@ def _input_hit(spec: dict[str, list[str]], inputs: dict[str, str]) -> str | None
 
 
 class _Detector:
-    def __init__(self, files: list[str], read: Callable[[str], str | None], pipelines: list[Pipeline],
+    def __init__(self, files: list[str] | FileIndex, read: Callable[[str], str | None], pipelines: list[Pipeline],
                  endpoint_types: dict[str, str]):
-        self.index = FileIndex(files)
+        self.index = files if isinstance(files, FileIndex) else FileIndex(files)
         self._read = read
         self._texts: dict[str, str | None] = {}
         self.sources = [_pipeline_source(p, endpoint_types) for p in pipelines]
@@ -548,7 +549,7 @@ def _resolve(ar: ArchetypeRules, section: str, found: Iterable[str]) -> list[str
 
 
 def profile_repo(
-    files: list[str],
+    files: list[str] | FileIndex,
     read: Callable[[str], str | None],
     pipelines: list[Pipeline],
     endpoint_types: dict[str, str],
@@ -592,6 +593,29 @@ def profile_repo(
     profile.windows = any(r.windows for r in stack_rules)
     profile.macos = any(r.macos for r in stack_rules)
     assign_names(profile, ar)
+    return profile
+
+
+def profile_pipeline(
+    pipeline: Pipeline,
+    endpoint_types: dict[str, str],
+    rules: Any,
+    files: list[str] | FileIndex | None = None,
+    read: Callable[[str], str | None] | None = None,
+) -> RepoProfile:
+    """What one build pipeline or release does, from its own tasks, task inputs, scripts, connections and jobs.
+
+    Repo scripts it calls by name are searched when the repo's files are given. Stacks and markers describe repos,
+    so they stay empty here; repo file signals (lock files, Dockerfile, ...) are not used either.
+    """
+    ar: ArchetypeRules = rules.archetype_rules
+    det = _Detector(files if files is not None else [], read or (lambda rel: None), [pipeline], endpoint_types)
+    profile = RepoProfile(source="pipelines")
+    for section in PIPELINE_SECTIONS:
+        hits = {rid: [found] for rid, rule in ar.rules[section].items() if (found := det._pipelines(rule))}
+        setattr(profile, section, _resolve(ar, section, hits))
+        for value in profile.values(section):
+            profile.evidence[f"{section}:{value}"] = hits[value]
     return profile
 
 

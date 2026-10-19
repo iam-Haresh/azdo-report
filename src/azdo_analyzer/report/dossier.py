@@ -10,7 +10,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from azdo_analyzer.analyze import AnalysisResult, PipelineResult, ProjectResult, RepoResult
-from azdo_analyzer.analyze.archetype import DIMENSIONS
+from azdo_analyzer.analyze.archetype import DIMENSIONS, RepoProfile
 from azdo_analyzer.cache import safe_name
 from azdo_analyzer.model import Pipeline
 from azdo_analyzer.report.graph import repo_graph
@@ -92,6 +92,18 @@ def _task_table(pipeline: Pipeline, rules: Any) -> list[dict[str, Any]]:
     return rows
 
 
+_DETECTED = {"build_tools": "build tools", "quality_tools": "test & scan tools", "deploy_targets": "deploy targets",
+             "artifacts": "artifacts produced"}
+
+
+def detected(profile: RepoProfile | None) -> str:
+    """A pipeline's or release's own archetype values, e.g. "build tools: maven, docker · deploy targets: kubernetes"."""
+    if profile is None:
+        return "—"
+    return " · ".join(f"{label}: {', '.join(profile.values(section))}" for section, label in _DETECTED.items()
+                      if profile.values(section)) or "none found"
+
+
 def build_view(r: PipelineResult, rules: Any) -> dict[str, Any]:
     pl, f, st = r.pipeline, r.facts, r.stats
     jobs = pl.all_jobs()
@@ -133,7 +145,7 @@ def build_view(r: PipelineResult, rules: Any) -> dict[str, Any]:
         "enabled": pl.enabled, "depth": pl.depth,
         "triggers": compact((t.describe() for t in pl.triggers), limit=6) or "none (manual only)",
         "pools": compact({j.pool or j.vm_image or "" for j in jobs}), "demands": compact({d for j in jobs for d in j.demands}),
-        "windows": compact(f.windows_reasons), "toolchain": toolchain(pl), "task_count": len(f.tasks),
+        "windows": compact(f.windows_reasons), "toolchain": toolchain(pl), "detected": detected(r.profile), "task_count": len(f.tasks),
         "unmapped": compact(f.unmapped_tasks), "marketplace": compact(f.marketplace_tasks),
         "templates": compact(pl.templates, limit=6), "unresolved": compact(f.unresolved_templates, limit=3), "dynamic": f.dynamic_templates,
         "build_number": pl.build_number_format, "tests": compact(f.test_formats), "quality": compact(quality),
@@ -156,6 +168,7 @@ def release_view(r: PipelineResult, project: ProjectResult) -> dict[str, Any]:
         "artifacts": compact(
             f"{a.alias}: {a.type} {a.source_name or ''} (default {a.default_version or '?'}{', branch ' + str(a.default_branch) if a.default_branch else ''}{', primary' if a.is_primary else ''})"
             for a in pl.artifacts),
+        "detected": detected(r.profile),
         "triggers": compact(t.describe() for t in pl.triggers), "release_name_format": pl.release_name_format,
         "stages": [s for s in project.stages if s["pipeline_key"] == pl.key],
         "deployment_groups": compact(f.deployment_groups), "approvals": compact(f.approvals), "approvers": compact(f.approvers),
