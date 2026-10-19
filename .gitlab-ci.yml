@@ -1,0 +1,100 @@
+# GitLab CI for azdo-analyzer - every job runs in the official Python image.
+#
+# What runs when
+#   push / merge request           -> test       the tool's own offline test suite (no Azure DevOps access)
+#   Run pipeline, schedule or API  -> inventory  when AZDO_PROJECT is empty: quick pass over every project
+#                                  -> analyze    when AZDO_PROJECT is set:   deep pass for that project
+#   Reports are saved as job artifacts (out/reports/ and out/logs/) for 30 days.
+#
+# One-time setup - Settings > CI/CD > Variables
+#   AZDO_PAT             the read-only PAT. Mark it Masked and Protected; never put it in this file.
+#   AZDO_COLLECTION_URL  default collection, e.g. https://azdo.mycompany.com/DefaultCollection
+#   AZDO_CONFIG_FILE     optional, type "File": a config.yaml (see config.example.yaml); it is copied to ./config.yaml
+#
+# Runner: your Azure DevOps Server is on-prem, and GitLab.com's hosted runners can't reach it.
+#   The inventory/analyze jobs need a self-managed runner inside your network: register one and put
+#   its tag under `tags:` in .azdo-job below. The test job needs no network and runs on any runner.
+
+stages:
+  - test
+  - analyze
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_ROOT_USER_ACTION: ignore
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  # Shown in the "Run pipeline" form:
+  AZDO_PROJECT:
+    value: ""
+    description: "Azure DevOps project to analyse deeply. Leave empty to run the inventory of all projects."
+  AZDO_COLLECTION:
+    value: ""
+    description: "Optional: another collection - a full URL or just its name on the same server. Empty = AZDO_COLLECTION_URL."
+  AZDO_EXTRA_ARGS:
+    value: ""
+    description: "Optional extra arguments, e.g. --refresh or --no-clone"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|schedule|api)$/
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never                     # avoid a duplicate branch pipeline while a merge request is open
+    - if: $CI_COMMIT_BRANCH
+
+default:
+  image: python:3.12                  # Debian-based official image; it already includes git (needed for clones)
+  cache:
+    key: pip
+    paths:
+      - .cache/pip
+  before_script:
+    - python --version && git --version
+    # Editable install: the tool reads rules/ and templates/ from this checkout.
+    - pip install --quiet -e ".[dev]"
+
+test:
+  stage: test
+  script:
+    - python -m pytest -q
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
+  interruptible: true
+
+# Shared settings for the jobs that talk to Azure DevOps (read-only).
+.azdo-job:
+  stage: analyze
+  tags:
+    - azdo-network                    # <- tag of a self-managed runner that can reach your Azure DevOps Server
+  resource_group: azdo-analyzer       # one analysis at a time, to be gentle on the server
+  timeout: 3h
+  artifacts:
+    when: always                      # keep the logs even when the run fails
+    expire_in: 30 days
+    paths:
+      - out/reports/
+      - out/logs/
+
+.azdo-prepare:
+  script:
+    - if [ -n "${AZDO_CONFIG_FILE:-}" ]; then cp "$AZDO_CONFIG_FILE" config.yaml; fi
+    - test -n "${AZDO_PAT:-}" || { echo "AZDO_PAT is not set - add it under Settings > CI/CD > Variables (masked, protected)"; exit 1; }
+    # --collection overrides AZDO_COLLECTION_URL when AZDO_COLLECTION is filled in the "Run pipeline" form.
+    - azdo-analyzer doctor ${AZDO_COLLECTION:+--collection "$AZDO_COLLECTION"}
+
+inventory:
+  extends: .azdo-job
+  script:
+    - !reference [.azdo-prepare, script]
+    - azdo-analyzer inventory --all ${AZDO_COLLECTION:+--collection "$AZDO_COLLECTION"} $AZDO_EXTRA_ARGS
+  rules:
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|schedule|api)$/ && $AZDO_PROJECT == ""
+
+analyze:
+  extends: .azdo-job
+  script:
+    - !reference [.azdo-prepare, script]
+    - azdo-analyzer analyze --project "$AZDO_PROJECT" ${AZDO_COLLECTION:+--collection "$AZDO_COLLECTION"} $AZDO_EXTRA_ARGS
+  rules:
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|schedule|api)$/ && $AZDO_PROJECT != ""
