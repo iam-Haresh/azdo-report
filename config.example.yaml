@@ -1,37 +1,172 @@
-# Copy to config.yaml and adjust. The PAT is NOT stored here: export AZDO_PAT=... (or use the macOS Keychain).
+# azdo-analyzer configuration
+#
+# How to use:  cp config.example.yaml config.yaml   then edit config.yaml.
+#              The tool reads ./config.yaml, or the file given with --config /path/to/config.yaml.
+# The PAT is never stored in this file - see azdo.pat_env below.
+# Unknown keys are rejected (a typo such as "colection_url" stops the run with an error).
+# Relative paths below are relative to the folder this config file is in.
 
 azdo:
-  # Azure DevOps Server 2022: https://<server>/<collection>  (older upgrades may include /tfs/)
+  # collection_url
+  #   The address of your Azure DevOps Server collection. Every API call and git clone goes to this host;
+  #   the tool refuses requests to any other host.
+  #   Example: https://azdo.mycompany.com/DefaultCollection
+  #            (servers upgraded from old TFS versions often look like https://tfs.mycompany.com/tfs/DefaultCollection)
+  #   Overridden by the AZDO_COLLECTION_URL environment variable, and by the --collection command-line option
+  #   (a full URL, or just a collection name on this server, e.g. --collection OtherCollection).
   collection_url: https://azdo.example.local/DefaultCollection
-  api_version: "7.0"            # run `azdo-analyzer doctor` - it prints the newest version your server accepts
-  pat_env: AZDO_PAT             # environment variable holding the read-only PAT
-  keychain_service: null        # optional: macOS Keychain generic-password service name holding the PAT
-  verify_tls: false             # TLS certificate verification is OFF for API calls and git (laptop use)
-  ca_bundle: null               # to verify instead: set verify_tls: true and point this at your corporate CA (PEM)
+
+  # api_version
+  #   REST API version sent with every call. Azure DevOps Server 2022 accepts 7.0 (7.1 on newer updates).
+  #   `azdo-analyzer doctor` prints the newest version your server accepts. Endpoints that are still
+  #   "preview" on your server get "-preview" added automatically.
+  #   Example: "7.1"   (keep the quotes so YAML treats it as text, not a number)
+  api_version: "7.0"
+
+  # pat_env
+  #   Name of the environment variable that holds your read-only PAT.
+  #   Example: with pat_env: AZDO_PAT, run this in the terminal first:   export AZDO_PAT='<your PAT>'
+  pat_env: AZDO_PAT
+
+  # keychain_service
+  #   Optional. If the environment variable above is empty, read the PAT from the macOS Keychain item
+  #   with this service name instead. null = don't use the Keychain.
+  #   Example: store the PAT once with   security add-generic-password -s azdo-analyzer -a "$USER" -w
+  #            (it prompts for the PAT), then set   keychain_service: azdo-analyzer
+  keychain_service: null
+
+  # verify_tls
+  #   Check the server's TLS (HTTPS) certificate, for API calls and git alike.
+  #   false = don't check (the default) - works from a laptop even when the server uses an internal
+  #           certificate authority that your Mac doesn't trust.
+  #   true  = check it; if your company uses its own certificate authority, also set ca_bundle.
+  #   Example: verify_tls: true
+  verify_tls: false
+
+  # ca_bundle
+  #   Only used when verify_tls is true. A PEM file with your company's root/intermediate CA
+  #   certificates, used by API calls and git. null = use the standard public CAs.
+  #   Example: ca_bundle: certs/corp-root-ca.pem
+  ca_bundle: null
+
+  # timeout_seconds
+  #   How long to wait for a single API response before giving up on that attempt (it is then retried).
+  #   Raise it if the server is slow or a project is very large.
+  #   Example: 120
   timeout_seconds: 60
-  concurrency: 6                # parallel API calls - keep modest for an on-prem server
+
+  # concurrency
+  #   How many API calls run at the same time. Higher is faster but puts more load on the server.
+  #   6 is gentle for an on-prem server. Use 2-3 when the server is busy, around 10 when it is quiet.
+  #   Example: 3
+  concurrency: 6
+
+  # max_retries
+  #   How many times a call is retried after a network error, a 429 (throttled) or a 5xx (server error).
+  #   Each wait is longer than the previous one, and the server's Retry-After header is honoured.
+  #   Example: 8
   max_retries: 5
 
 scope:
-  projects: []                  # default projects for `inventory` without --all (empty = all)
+  # projects
+  #   Projects that `azdo-analyzer inventory` analyses when you run it without --all or --project.
+  #   Empty = you must pass --all or --project. Names are case-insensitive and must exist on the server.
+  #   (`analyze` always needs --project.)
+  #   Example: projects: [InfoSecArch, Payments]   ->   `azdo-analyzer inventory` covers just these two
+  projects: []
+
+  # exclude_projects
+  #   Projects that are always skipped - with --all, --project, scope.projects, online and --offline.
+  #   Example: exclude_projects: [Sandbox, Training]
   exclude_projects: []
 
 collection:
-  history_days: 180             # run / deployment history window used for statistics
-  timelines_for_active_only: true
+  # history_days
+  #   How far back pipeline runs and release deployments are fetched. This window drives the statistics:
+  #   runs, success %, durations, queue time, peak concurrency and build minutes per month. It also decides
+  #   which pipelines get a "last good run" check: only those with a successful run in the window.
+  #   "Last run" dates come from each pipeline definition and are not limited by this window.
+  #   Example: 365   (a full year: more data, slower first run)
+  history_days: 180
+
   clone:
-    enabled: true               # deep `analyze` clones default branches (depth 1) for the content scan
-    max_repo_mb: 2048           # larger repos use the items API (tree listing) instead of a clone
+    # enabled
+    #   During `analyze`, shallow-clone each repo (default branch only, depth 1) so its files can be
+    #   scanned: feed configs, ##vso commands, hard-coded AZDO URLs, Dockerfiles, .NET versions, LFS,
+    #   submodules. YAML templates are then read from disk. `inventory` never clones.
+    #   false = same as the --no-clone flag: no file scan; YAML files are read through the API instead.
+    #   Example: enabled: false
+    enabled: true
+
+    # max_repo_mb
+    #   Repos bigger than this (size as reported by Azure DevOps) are not cloned. They get a file listing
+    #   through the API instead, and only key files (feed configs, Dockerfiles, project files) are read.
+    #   Example: 500   (skip cloning anything over 500 MB)
+    max_repo_mb: 2048
+
+    # concurrency
+    #   How many git clones run at the same time.
+    #   Example: 2   (on a slow VPN)
     concurrency: 4
+
+    # git_binary
+    #   The git program to run. Use a full path if git isn't on your PATH or you want a specific install
+    #   (git 2.31 or newer is needed).
+    #   Example: /opt/homebrew/bin/git
     git_binary: git
 
 analysis:
-  active_days: 90               # Active  = commit/run/deploy within this many days
-  dormant_days: 365             # Dormant = within this many days, otherwise Dead
-  redact_values: false          # true = never print plain variable values in reports
-  gitlab_tier: premium          # free | premium | ultimate (affects mapping hints, e.g. external status checks)
-  gitlab_repo_limit_gb: 10      # GitLab.com per-project repository limit
-  internal_host_patterns:       # hosts matching these regexes are treated as reachable only inside your network
+  # active_days
+  #   A repo or pipeline is "Active" if its last commit (any branch), run or deployment is within this many days.
+  #   Example: 30   (a stricter definition of "in use")
+  active_days: 90
+
+  # dormant_days
+  #   Not Active, but last activity within this many days = "Dormant". Older = "Dead" (a retire candidate).
+  #   Also used for the "stale branches" count (branches with no commit for this long).
+  #   Example: 180
+  dormant_days: 365
+
+  # redact_values
+  #   false = reports show the values of plain (non-secret) variables, which helps the config analysis.
+  #           Variables whose names look like secrets (see secret_name_pattern) are always hidden.
+  #   true  = hide every variable value in the reports.
+  #   Secret values never appear: Azure DevOps doesn't return them. The raw cache under out/raw still
+  #   holds plain values either way, so keep that folder private.
+  #   Example: redact_values: true   (before sharing the workbook widely)
+  redact_values: false
+
+  # secret_name_pattern
+  #   Regular expression for variable names that look like secrets. A plain (non-secret) variable with a
+  #   matching name gets a PLAINTEXT_SECRET finding, and its value is hidden in the reports.
+  #   "(?i)" makes it case-insensitive.
+  #   Example: append your own naming, e.g. ...|sas[_.-]?token|license[_.-]?key)
+  secret_name_pattern: '(?i)(pass(word)?|pwd|secret|token|api[_.-]?key|private[_.-]?key|connection[_.-]?string|credential|client[_.-]?secret)'
+
+  # gitlab_tier
+  #   Your GitLab.com tier: free, premium or ultimate. Changes the hints where a feature needs a higher tier.
+  #   For example, on premium a "Status" branch policy is flagged ULTIMATE_ONLY, because external status
+  #   checks are an Ultimate feature. It is also shown in the report headers.
+  #   Example: gitlab_tier: ultimate
+  gitlab_tier: premium
+
+  # gitlab_repo_limit_gb
+  #   GitLab.com's repository size limit per project, in GB.
+  #   - Repos above half of it get a REPO_SIZE finding (high) and +2 complexity.
+  #   - Repos above the full limit get a REPO_SIZE blocker.
+  #   Example: keep 10 (the current GitLab.com limit) unless GitLab changes it
+  gitlab_repo_limit_gb: 10
+
+  # internal_host_patterns
+  #   Regular expressions matched against the host names in service connections (Kubernetes clusters,
+  #   registries, SonarQube, ...). A match means "only reachable inside your network", so the pipeline gets
+  #   an INTERNAL_TARGET finding: GitLab.com's hosted runners can't reach it, and you'd need a self-managed
+  #   runner inside your network (or the GitLab agent for Kubernetes).
+  #   Deployment groups always count as internal.
+  #   The defaults match names like sonar.mycorp.local, 10.20.0.5, 192.168.1.20 and single-word hosts such
+  #   as buildserver.
+  #   Example: add your company's internal domain:   - '\.mycompany\.net$'
+  internal_host_patterns:
     - '\.local$'
     - '\.corp\.'
     - '\.internal$'
@@ -42,8 +177,30 @@ analysis:
     - '^[^.]+$'
 
 output:
-  dir: out                      # raw cache, clones, model and reports (git-ignored)
+  # dir
+  #   Folder for everything the tool writes:
+  #     out/raw     - cached API responses (reused on reruns; --refresh fetches again)
+  #     out/repos   - shallow clones
+  #     out/model   - normalized pipelines and the index used for the "changes since last run" report
+  #     out/reports - one folder per run date: workbook, dossiers, project summaries
+  #     out/logs    - run logs (the PAT is always redacted)
+  #   One folder holds one collection (the tool stops rather than mix two). The --output-dir option overrides this.
+  #   Example: dir: /Users/me/azdo-analysis-data
+  dir: out
+
+  # overrides_file
+  #   YAML file with your manual decisions per repo: wave, owner, status, archetype, template, notes.
+  #   It is only read, never written, and is merged into every report run.
+  #   Copy overrides.example.yaml to start.
+  #   Example: overrides_file: decisions/overrides.yaml
   overrides_file: overrides.yaml
 
-# rules_dir: rules              # default: ./rules next to the code
-# templates_dir: templates
+# rules_dir
+#   Optional (top level, not under a section). Use your own copy of the rule files - task mapping,
+#   archetypes, scoring, findings, scan patterns - instead of the ones shipped in ./rules.
+#   Example: rules_dir: my-rules
+#
+# templates_dir
+#   Optional (top level). Use your own copy of the report templates (repo dossier, project summary)
+#   instead of the ones shipped in ./templates.
+#   Example: templates_dir: my-templates

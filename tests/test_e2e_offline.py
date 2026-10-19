@@ -120,3 +120,9 @@ def test_inventory_mode_without_full_definitions(sample_cfg, rules, provider):
     assert any(f.id == "INVENTORY_ONLY" for f in project.findings)
     paths = write_reports(result, "inventory", dossiers=False)
     assert paths["dossiers"] == {} and paths["workbook"].exists()
+
+
+def test_variable_group_rows_name_their_pipelines(sample_cfg, rules, provider):
+    result = run_analysis(sample_cfg, rules, [PROJECT], provider=provider, now=NOW)
+    rows = [v for v in result.projects[0].variables if v["scope_type"] == "group" and v["owner"] == "payments-common"]
+    assert rows and all(v["used_by"] == "payments-api-ci" for v in rows)

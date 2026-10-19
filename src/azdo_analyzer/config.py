@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import yaml
 
@@ -48,7 +49,6 @@ class CloneSettings:
 @dataclass
 class CollectionSettings:
     history_days: int = 180
-    timelines_for_active_only: bool = True
     clone: CloneSettings = field(default_factory=CloneSettings)
 
 
@@ -178,6 +178,25 @@ def load_config(path: Path | None) -> Config:
     if cfg.analysis.gitlab_tier not in ("premium", "ultimate", "free"):
         raise ConfigError("analysis.gitlab_tier must be one of: free, premium, ultimate")
     return cfg
+
+
+def resolve_collection(value: str, configured: str) -> str:
+    """--collection accepts a full collection URL, or just a collection name.
+
+    A name replaces the collection part of the configured URL, e.g. configured
+    https://azdo.example.com/tfs/DefaultCollection + "Payments" -> https://azdo.example.com/tfs/Payments.
+    """
+    value = value.strip().rstrip("/")
+    if "://" in value:
+        return value
+    if not configured:
+        raise ConfigError(
+            f"--collection {value!r} is a collection name, so the server must come from azdo.collection_url or "
+            "AZDO_COLLECTION_URL - or pass the full URL, e.g. --collection https://azdo.example.com/DefaultCollection"
+        )
+    parts = urlsplit(configured.rstrip("/"))
+    parent = parts.path.rsplit("/", 1)[0] if "/" in parts.path else ""
+    return f"{parts.scheme}://{parts.netloc}{parent}/{quote(value, safe='')}"
 
 
 def get_pat(settings: AzdoSettings) -> str:

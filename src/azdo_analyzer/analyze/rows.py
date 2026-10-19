@@ -134,6 +134,7 @@ def _value(v: Variable, redact: bool, secret_re: re.Pattern) -> str:
 def variable_rows(raw: ProjectRaw, pipelines: list[Pipeline], usage: Usage, repo_names: Callable[[set[str]], list[str]],
                   redact: bool, secret_pattern: str) -> list[dict[str, Any]]:
     secret_re = re.compile(secret_pattern)
+    names = {p.key: p.name for p in pipelines}
     rows = []
     for p in pipelines:
         for v in p.all_variables():
@@ -176,7 +177,7 @@ def variable_rows(raw: ProjectRaw, pipelines: list[Pipeline], usage: Usage, repo
                 "project": raw.name, "scope_type": "group", "owner": g.get("name"), "name": name, "secret": v.is_secret or kv,
                 "settable": False, "value": "(Key Vault)" if kv else _value(v, redact, secret_re), "valid_key": is_valid_gitlab_key(name),
                 "proposed_key": name if is_valid_gitlab_key(name) else gitlab_key(name), "proposed_level": level,
-                "used_by": compact(sorted({k.split(":", 2)[2] for k in users}), limit=5) if users else "",
+                "used_by": compact(sorted(names.get(k, k) for k in users), limit=5),
                 "group_id": g.get("id"),
             })
     return rows

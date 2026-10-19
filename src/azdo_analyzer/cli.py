@@ -18,7 +18,7 @@ from azdo_analyzer.client import AzdoClient, AzdoHttpError, RedactingFilter
 from azdo_analyzer.collect import CollectContext, Coverage, collect_all
 from azdo_analyzer.collect.content import GIT_READ_COMMANDS, FileProvider, run_git
 from azdo_analyzer.collect.repos import tfvc_capability, tfvc_probe_params
-from azdo_analyzer.config import Config, ConfigError, get_pat, load_config
+from azdo_analyzer.config import Config, ConfigError, get_pat, load_config, resolve_collection
 from azdo_analyzer.report import write_reports
 from azdo_analyzer.rules import load_rules
 from azdo_analyzer.util import slugify, utcnow
@@ -27,6 +27,11 @@ app = typer.Typer(add_completion=False, no_args_is_help=True,
                   help="Read-only Azure DevOps Server analysis for planning an AZDO -> GitLab migration.")
 console = Console()
 ConfigOpt = typer.Option(None, "--config", "-c", help="Path to config.yaml (default: ./config.yaml)")
+CollectionOpt = typer.Option(
+    None, "--collection",
+    help="Collection URL (https://server/DefaultCollection), or just a collection name on the server from config.yaml. "
+         "Overrides azdo.collection_url and AZDO_COLLECTION_URL.")
+OutputDirOpt = typer.Option(None, "--output-dir", help="Output folder (cache, clones, reports). Overrides output.dir.")
 
 
 def _setup_logging(cfg: Config, client: AzdoClient | None, verbose: bool) -> Path:
@@ -48,13 +53,28 @@ def _client(cfg: Config, pat: str) -> AzdoClient:
                       timeout=cfg.azdo.timeout_seconds, max_retries=cfg.azdo.max_retries, concurrency=cfg.azdo.concurrency)
 
 
-def _load(config: Optional[Path]) -> Config:
+def _load(config: Optional[Path], collection: Optional[str] = None, output_dir: Optional[Path] = None) -> Config:
     try:
         cfg = load_config(config)
+        if collection:
+            cfg.azdo.collection_url = resolve_collection(collection, cfg.azdo.collection_url)
     except ConfigError as exc:
         console.print(f"[red]Config error:[/red] {exc}")
         raise typer.Exit(2) from None
+    if output_dir:
+        cfg.output.dir = str(output_dir.expanduser().resolve())  # relative to the current folder, like any CLI path
     return cfg
+
+
+def _check_cache_collection(cfg: Config, store: RawStore) -> None:
+    """One output folder holds one collection: stop instead of mixing cached data of two collections."""
+    cached = (store.read("_org", "_meta.json", default={}) or {}).get("collection_url")
+    current = cfg.azdo.collection_url
+    if cached and current and cached.rstrip("/").lower() != current.rstrip("/").lower():
+        console.print(f"[red]{cfg.out_dir} holds data from {cached}, not {current}.[/red] "
+                      f"Use one output folder per collection, e.g. --output-dir out-<collection> "
+                      f"(or delete {cfg.raw_dir} to start over).")
+        raise typer.Exit(2)
 
 
 def _require_url(cfg: Config) -> None:
@@ -65,9 +85,10 @@ def _require_url(cfg: Config) -> None:
 
 
 @app.command()
-def doctor(config: Optional[Path] = ConfigOpt) -> None:
+def doctor(config: Optional[Path] = ConfigOpt, collection: Optional[str] = CollectionOpt,
+           output_dir: Optional[Path] = OutputDirOpt) -> None:
     """Check connectivity, TLS, API version and which collectors the PAT can use."""
-    cfg = _load(config)
+    cfg = _load(config, collection, output_dir)
     _require_url(cfg)
     try:
         pat = get_pat(cfg.azdo)
@@ -166,10 +187,12 @@ def _run(cfg: Config, *, projects: list[str], all_projects: bool, deep: bool, re
     rules = load_rules(cfg.rules_path)
     now = utcnow()
     store = RawStore(cfg.raw_dir)
+    _check_cache_collection(cfg, store)
     client: AzdoClient | None = None
     if offline:
         _setup_logging(cfg, None, verbose)
-        names = projects or (store.scopes() if all_projects else [])
+        excluded = {n.lower() for n in cfg.scope.exclude_projects}
+        names = [n for n in (projects or (store.scopes() if all_projects else [])) if n.lower() not in excluded]
         if not names:
             console.print("[red]--offline needs --project or --all with cached data[/red]")
             raise typer.Exit(2)
@@ -227,13 +250,16 @@ def inventory(
     offline: bool = typer.Option(False, "--offline", help="Use only cached data (no API calls)"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     config: Optional[Path] = ConfigOpt,
+    collection: Optional[str] = CollectionOpt,
+    output_dir: Optional[Path] = OutputDirOpt,
 ) -> None:
     """Fast metadata-only pass (no clones) for wave planning across projects."""
-    if not all_projects and not project:
-        console.print("[red]Use --all or --project NAME[/red]")
+    cfg = _load(config, collection, output_dir)
+    chosen = list(project or []) or ([] if all_projects else list(cfg.scope.projects))
+    if not all_projects and not chosen:
+        console.print("[red]Use --all, --project NAME, or list projects under scope.projects in config.yaml[/red]")
         raise typer.Exit(2)
-    cfg = _load(config)
-    _run(cfg, projects=project or [], all_projects=all_projects, deep=False, refresh=refresh, offline=offline, no_clone=True,
+    _run(cfg, projects=chosen, all_projects=all_projects, deep=False, refresh=refresh, offline=offline, no_clone=True,
          verbose=verbose, label="inventory")
 
 
@@ -245,9 +271,11 @@ def analyze(
     no_clone: bool = typer.Option(False, "--no-clone", help="Skip cloning (no content scan / YAML resolution from clones)"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     config: Optional[Path] = ConfigOpt,
+    collection: Optional[str] = CollectionOpt,
+    output_dir: Optional[Path] = OutputDirOpt,
 ) -> None:
     """Deep pass before a migration wave: full definitions, clones, YAML resolution, scan, dossiers."""
-    cfg = _load(config)
+    cfg = _load(config, collection, output_dir)
     label = slugify(project[0]) if len(project) == 1 else "projects"
     _run(cfg, projects=project, all_projects=False, deep=True, refresh=refresh, offline=offline, no_clone=no_clone,
          verbose=verbose, label=label)

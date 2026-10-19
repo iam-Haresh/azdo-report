@@ -354,13 +354,8 @@ def run_analysis(cfg: Config, rules: Rules, project_names: list[str], *, provide
           "levels": ", ".join(f"{k} {v}" for k, v in sorted(e["levels"].items()))} for e in archetypes.values()),
         key=lambda e: (-e["repo_count"], e["key"]),
     )
-    pool_stats: dict[str, dict[str, float]] = {}
-    for p in projects:
-        for pool, stats in p.pools.items():
-            agg = pool_stats.setdefault(pool, {"runs": 0, "peak_concurrency": 0, "minutes_per_month": 0.0})
-            agg["runs"] += stats["runs"]
-            agg["peak_concurrency"] = max(agg["peak_concurrency"], stats["peak_concurrency"])
-            agg["minutes_per_month"] += stats["minutes_per_month"]
+    # one sweep over all projects' runs: projects sharing a pool overlap in time
+    pool_stats = pool_usage([b for p in projects for b in p.raw.builds], cfg.collection.history_days)
     coverage = list(org.coverage) + [row for p in projects for row in p.raw.coverage]
     return AnalysisResult(
         generated=now, cfg=cfg, rules=rules, org=org, projects=projects, tasks=tasks, archetypes=archetype_rows,

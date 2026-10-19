@@ -495,7 +495,7 @@ def raw_files() -> dict[tuple[str, ...], object]:
         ("_org", "feeds.json"): [{"id": "f1", "name": "nuget-internal", "upstreamSources": [{"name": "nuget.org"}]}],
         ("_org", "hooks.json"): [{"id": "h1", "consumerId": "teams", "eventType": "build.complete", "publisherInputs": {"projectId": PID}},
                                  {"id": "h2", "consumerId": "webHooks", "eventType": "git.push", "publisherInputs": {"projectId": "other"}}],
-        ("_org", "_meta.json"): {"fetched_at": "2026-10-01T08:00:00Z"},
+        ("_org", "_meta.json"): {"fetched_at": "2026-10-01T08:00:00Z", "collection_url": COLLECTION},
         ("_org", "coverage.json"): [{"scope": "_org", "collector": "org", "endpoint": "distributedtask/tasks", "status": "OK", "calls": 1,
                                      "failed": 0, "items": len(T), "message": ""}],
         (PROJECT, "_meta.json"): {"fetched_at": "2026-10-01T08:00:00Z", "depth": "deep", "project_id": PID},

@@ -60,7 +60,7 @@ def collect_all(
         raise RuntimeError("No projects returned - check collection_url and that the PAT has 'Project and Team (Read)'.")
     selected = select_projects(ctx, projects, requested, all_projects)
     collect_org(ctx, selected)
-    write_meta(ctx.store, ORG, fetched_at=iso(ctx.now))
+    write_meta(ctx.store, ORG, fetched_at=iso(ctx.now), collection_url=ctx.cfg.azdo.collection_url)
     ctx.store.write(ctx.coverage.to_list(ORG), ORG, "coverage.json")
     for project in selected:
         collect_project(ctx, project, pat)

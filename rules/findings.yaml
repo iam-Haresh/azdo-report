@@ -42,7 +42,6 @@ findings:
   ULTIMATE_ONLY: {severity: medium, title: "Requires a GitLab Ultimate feature", remediation: "Status-check branch policies map to external status checks (Ultimate); on Premium use pipeline jobs instead."}
   PR_TRIGGER_IGNORED: {severity: info, title: "'pr:' trigger ignored by Azure Repos", remediation: "PR validation comes from branch policies; recreate as merge request pipelines (workflow:rules)."}
   BRANCH_POLICIES: {severity: low, title: "Branch policies to recreate", remediation: "Protected branches, MR approval rules, 'pipelines must succeed', 'all threads resolved' (see Branch Policies sheet)."}
-  CLONE: {severity: info, title: "Pipeline shares its task sequence with others", remediation: "Good candidate for one shared GitLab template."}
   SERVICE_HOOKS: {severity: low, title: "Service hooks configured", remediation: "Recreate as GitLab webhooks/integrations (Teams, Slack, Jira, ServiceNow)."}
   UNUSED_CONNECTION: {severity: info, title: "Service connection not used by any pipeline", remediation: "Do not migrate it."}
   OAUTH_TOKEN_ACCESS: {severity: low, title: "Jobs allow scripts to access the OAuth token", remediation: "Check scripts for AZDO API calls; use CI_JOB_TOKEN/project tokens in GitLab."}
