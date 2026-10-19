@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from azdo_analyzer.client import AzdoHttpError
 from azdo_analyzer.collect.base import CollectContext
 
 
@@ -63,14 +64,30 @@ def collect_repos(ctx: CollectContext, project: dict) -> list[dict]:
         collector="repos",
         endpoint="policy/configurations",
     )
-    ctx.fetch(
-        (p, "tfvc_changesets.json"),
-        lambda: c.get_list("tfvc/changesets", {"searchCriteria.itemPath": f"$/{p}", "$top": 1}, project=p),
-        scope=scope,
-        collector="repos",
-        endpoint="tfvc/changesets",
-    )
+    def tfvc_changesets() -> list:
+        try:
+            return c.get_list("tfvc/changesets", tfvc_probe_params(p), project=p)
+        except AzdoHttpError as exc:
+            if exc.status == 404:  # VS403405: $/<project> does not exist -> Git-only project
+                return []
+            raise
+
+    ctx.fetch((p, "tfvc_changesets.json"), tfvc_changesets, scope=scope, collector="repos", endpoint="tfvc/changesets")
     return repos
+
+
+def tfvc_probe_params(project: str) -> dict[str, Any]:
+    return {"searchCriteria.itemPath": f"$/{project}", "$top": 1}
+
+
+def tfvc_capability(details: dict | None) -> bool | None:
+    """Whether the project has TFVC according to its version-control capabilities (None = unknown)."""
+    caps = ((details or {}).get("capabilities") or {}).get("versioncontrol") or {}
+    if "tfvcEnabled" in caps:
+        return str(caps["tfvcEnabled"]).lower() == "true"
+    if caps.get("sourceControlType"):
+        return str(caps["sourceControlType"]).lower() == "tfvc"
+    return None
 
 
 def resolve_identities(ctx: CollectContext, project: str, identity_ids: set[str]) -> dict[str, Any]:

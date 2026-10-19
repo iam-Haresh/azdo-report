@@ -41,6 +41,7 @@ from azdo_analyzer.analyze.scoring import Score, score_pipeline, score_repo
 from azdo_analyzer.analyze.usage import Usage, build_usage
 from azdo_analyzer.cache import RawStore
 from azdo_analyzer.collect.content import FileProvider, RepoContent
+from azdo_analyzer.collect.repos import tfvc_capability
 from azdo_analyzer.config import Config
 from azdo_analyzer.model import Pipeline, Variable
 from azdo_analyzer.normalize import normalize_project, save_model
@@ -165,13 +166,12 @@ def load_overrides(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def _tfvc(raw: ProjectRaw) -> dict | None:
-    caps = (raw.details.get("capabilities") or {}).get("versioncontrol") or {}
     if raw.tfvc_changesets:
         cs = raw.tfvc_changesets[0]
         created = parse_dt(cs.get("createdDate"))
         return {"last": created.date().isoformat() if created else None, "author": (cs.get("author") or {}).get("displayName"),
                 "changeset": cs.get("changesetId")}
-    if str(caps.get("sourceControlType", "")).lower() == "tfvc":
+    if tfvc_capability(raw.details):  # TFVC exists but its changesets were not readable
         return {"last": None, "author": None, "changeset": None}
     return None
 

@@ -18,6 +18,7 @@ from azdo_analyzer.cache import RawStore
 from azdo_analyzer.client import AzdoClient, AzdoHttpError, RedactingFilter
 from azdo_analyzer.collect import CollectContext, Coverage, collect_all
 from azdo_analyzer.collect.content import FileProvider, git_env
+from azdo_analyzer.collect.repos import tfvc_capability, tfvc_probe_params
 from azdo_analyzer.config import Config, ConfigError, get_pat, load_config
 from azdo_analyzer.report import write_reports
 from azdo_analyzer.rules import load_rules
@@ -96,6 +97,14 @@ def doctor(config: Optional[Path] = ConfigOpt) -> None:
         raise typer.Exit(1)
     project = projects[0]["name"]
     console.print(f"Probing project-scoped endpoints with project [bold]{project}[/bold]")
+    has_tfvc = None
+    try:
+        details = client.get_json(f"projects/{projects[0]['id']}", {"includeCapabilities": "true"})
+        has_tfvc = tfvc_capability(details)
+        vc = ((details.get("capabilities") or {}).get("versioncontrol") or {}).get("sourceControlType", "?")
+        console.print(f"Version control in {project}: {vc} (TFVC: {'yes' if has_tfvc else 'no' if has_tfvc is False else 'unknown'})")
+    except AzdoHttpError:
+        pass
     queues = []
     try:
         queues = client.get_list("distributedtask/queues", project=project)
@@ -105,7 +114,7 @@ def doctor(config: Optional[Path] = ConfigOpt) -> None:
         ("Project and Team (Read)", "projects", None, {"$top": 1}),
         ("Code (Read)", "git/repositories", project, None),
         ("Code (Read)", "policy/configurations", project, {"$top": 1}),
-        ("Code (Read)", "tfvc/changesets", project, {"$top": 1}),
+        ("Code (Read)", "tfvc/changesets", project, tfvc_probe_params(project)),
         ("Build (Read)", "build/definitions", project, {"$top": 1}),
         ("Build (Read)", "build/builds", project, {"$top": 1}),
         ("Build (Read)", "pipelines/checks/configurations", project,
@@ -135,8 +144,12 @@ def doctor(config: Optional[Path] = ConfigOpt) -> None:
             client.get(path, params, project=proj)
             result = "[green]OK[/green]"
         except AzdoHttpError as exc:
-            hint = "missing scope or permission" if exc.status in (401, 403) else exc.message[:80]
-            result = f"[red]{exc.status}[/red] {hint}"
+            if path == "tfvc/changesets" and exc.status == 404:
+                result = ("[yellow]404[/yellow] project has TFVC but this account cannot read it" if has_tfvc
+                          else "[green]OK[/green] no TFVC repository (Git only) - nothing to convert")
+            else:
+                hint = "missing scope or permission" if exc.status in (401, 403) else exc.message[:80]
+                result = f"[red]{exc.status}[/red] {hint}"
         table.add_row(scope, path, result)
     console.print(table)
     repos = client.get_list("git/repositories", project=project)

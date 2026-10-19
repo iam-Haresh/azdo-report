@@ -100,8 +100,9 @@ class FakeServer:
             return d(p, "repo", m.group(1), "tags.json") or []
         if route == "policy/configurations":
             return d(p, "policy_configurations.json")
-        if route == "tfvc/changesets":
-            return []
+        if route == "tfvc/changesets":  # what Server 2022 returns for a Git-only project
+            return httpx.Response(404, json={"typeKey": "ItemNotFoundException", "message":
+                                             f"VS403405: The item $/{p} does not exist on the server, or you do not have access."})
         if route == "build/definitions":
             defs = d(p, "build_definitions.json")
             if params.get("continuationToken") == "page2":
@@ -182,6 +183,9 @@ def test_collect_against_fake_server(tmp_path: Path, rules):
     coverage = {(c["collector"], c["endpoint"]): c["status"] for c in store.read(PROJECT, "coverage.json")}
     assert coverage[("resources", "distributedtask/deploymentgroups")] == "FORBIDDEN"
     assert store.read(PROJECT, "identities.json")[SECURITY_TEAM]["displayName"].endswith("Security Team")
+    # 404 on $/<project> = Git-only project: stored as "no changesets" and reported OK, not as a failure
+    assert store.read(PROJECT, "tfvc_changesets.json") == []
+    assert coverage[("repos", "tfvc/changesets")] == "OK"
     assert store.read(PROJECT, "_meta.json")["depth"] == "deep"
 
     # the cache makes a second run free: no new requests without --refresh
@@ -229,6 +233,7 @@ def test_doctor_command(tmp_path: Path, monkeypatch):
         result = CliRunner().invoke(cli.app, ["doctor", "--config", str(cfg_file)])
     assert result.exit_code == 0, result.output
     assert "Reader Bot" in result.output and "PAT coverage" in result.output
+    assert "no TFVC repository" in result.output and "TFVC: no" in result.output
     assert {r.method for r in server.requests} == {"GET"}
     cmd, env = calls[0]
     assert cmd[1] == "ls-remote" and "fake-pat" not in " ".join(cmd)  # PAT only travels in GIT_CONFIG_* env vars

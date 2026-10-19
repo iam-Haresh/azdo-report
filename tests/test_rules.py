@@ -97,3 +97,21 @@ def test_misc_utils():
     assert slugify("My.Repo.git") == "my.repo-repo"
     assert parse_dt("2026-09-01T10:00:00.1234567Z") == datetime(2026, 9, 1, 10, 0, 0, 123456, tzinfo=timezone.utc)
     assert parse_dt("0001-01-01T00:00:00") is None
+
+
+def test_tfvc_detection():
+    from azdo_analyzer.analyze import _tfvc
+    from azdo_analyzer.collect.repos import tfvc_capability
+    from azdo_analyzer.rawdata import ProjectRaw
+
+    caps = lambda **vc: {"capabilities": {"versioncontrol": vc}}  # noqa: E731
+    assert tfvc_capability(caps(sourceControlType="Git", tfvcEnabled="False")) is False
+    assert tfvc_capability(caps(sourceControlType="Git", tfvcEnabled="True")) is True  # TFVC added to a Git project
+    assert tfvc_capability(caps(sourceControlType="Tfvc")) is True
+    assert tfvc_capability({}) is None
+    git_only = ProjectRaw(name="P", id="1", details=caps(sourceControlType="Git", tfvcEnabled="False"), tfvc_changesets=[])
+    assert _tfvc(git_only) is None
+    unreadable = ProjectRaw(name="P", id="1", details=caps(sourceControlType="Git", tfvcEnabled="True"), tfvc_changesets=[])
+    assert _tfvc(unreadable) == {"last": None, "author": None, "changeset": None}
+    used = ProjectRaw(name="P", id="1", tfvc_changesets=[{"changesetId": 42, "createdDate": "2024-05-01T10:00:00Z", "author": {"displayName": "Old Dev"}}])
+    assert _tfvc(used) == {"last": "2024-05-01", "author": "Old Dev", "changeset": 42}

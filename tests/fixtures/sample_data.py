@@ -476,7 +476,7 @@ def raw_files() -> dict[tuple[str, ...], object]:
     files: dict[tuple[str, ...], object] = {
         ("_org", "projects.json"): [{"id": PID, "name": PROJECT, "state": "wellFormed"}],
         ("_org", "project_details", f"{PID}.json"): {"id": PID, "name": PROJECT, "capabilities": {
-            "versioncontrol": {"sourceControlType": "Git"}, "processTemplate": {"templateName": "Agile"}}},
+            "versioncontrol": {"sourceControlType": "Git", "gitEnabled": "True", "tfvcEnabled": "False"}, "processTemplate": {"templateName": "Agile"}}},
         ("_org", "tasks.json"): _task_catalog(),
         ("_org", "extensions.json"): [{"publisherId": "qetza", "extensionId": "replacetokens", "version": "5.3.0"},
                                       {"publisherId": "sonarsource", "extensionId": "sonarqube", "version": "5.19.0"},
